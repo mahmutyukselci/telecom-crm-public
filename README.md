@@ -4,7 +4,7 @@
 > **Document Version:** 2.0  
 > **Target Platform:** Java 21 / 25 | Spring Boot 4.1.0 | Spring Cloud 2025.1.2  
 > **Author:** Mahmut Yükselci  
-> **Company:** PIA Bilişim A.Ş., Teknopark Istanbul  
+> **Company:** PIA Bilişim A.Ş. 
 
 ---
 
