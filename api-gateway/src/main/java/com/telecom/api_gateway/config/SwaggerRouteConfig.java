@@ -69,6 +69,13 @@ public class SwaggerRouteConfig {
                         )
                         .uri(subscriptionUrl)
                 )
+                .route("subscription-service-history", r -> r
+                        .path("/api/v1/history/**")
+                        .filters(f -> f
+                                .filter(loggingFilter("Subscription Service - History API"))
+                        )
+                        .uri(subscriptionUrl)
+                )
 
 
                 // =========================
