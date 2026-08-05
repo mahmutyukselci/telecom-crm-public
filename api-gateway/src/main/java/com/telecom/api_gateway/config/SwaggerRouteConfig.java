@@ -28,9 +28,9 @@ public class SwaggerRouteConfig {
                 // CUSTOMER SERVICE
                 // =========================
 
-                // Swagger
+                // Swagger Documentation
                 .route("customer-service-docs", r -> r
-                        // DÜZELTME 1: Swagger isteklerinin sonunda '/' olmaması ihtimaline karşı hem tam yolu hem alt yolları ekledik
+                        // FIX 1: Handle both exact path and subpaths in case the request does not end with '/'
                         .path("/v3/api-docs/customer-service", "/v3/api-docs/customer-service/**")
                         .filters(f -> f
                                 .rewritePath("/v3/api-docs/customer-service(?<segment>.*)", "/v3/api-docs${segment}")
@@ -39,7 +39,7 @@ public class SwaggerRouteConfig {
                         .uri(customerUrl)
                 )
 
-                // API
+                // API Endpoints
                 .route("customer-service-api", r -> r
                         .path("/api/v1/customers/**")
                         .filters(f -> f
@@ -85,7 +85,7 @@ public class SwaggerRouteConfig {
                 )
 
                 .route("catalog-service-api", r -> r
-                        // DÜZELTME 2: Curl ile atılan asıl url buraya girildi.
+                        // FIX 2: The actual URL used in curl requests is mapped here
                         .path("/api/v1/tariffs/**")
                         .filters(f -> f
                                 .filter(loggingFilter("Catalog Service API"))
@@ -119,19 +119,19 @@ public class SwaggerRouteConfig {
     }
 
     /**
-     * Custom filter that logs:
-     * - The final state of the request before it leaves the Gateway
-     * - The HTTP status code returned from the downstream service
+     * Custom Gateway filter that logs:
+     * - The outgoing request URI before it is sent to the downstream service
+     * - The HTTP response status returned by the downstream service
      */
     private GatewayFilter loggingFilter(String routeName) {
         return (exchange, chain) -> {
             log.info("===================================================");
-            log.info("🚀 [{}] ROUTE INTERCEPTED!", routeName);
-            log.info("🔗 Outgoing Request URI: {}", exchange.getRequest().getURI());
+            log.info("ROUTE INTERCEPTED: {}", routeName);
+            log.info("Outgoing Request URI: {}", exchange.getRequest().getURI());
             log.info("===================================================");
 
             return chain.filter(exchange).then(Mono.fromRunnable(() -> {
-                log.info("✅ [{}] RESPONSE HTTP STATUS: {}", routeName, exchange.getResponse().getStatusCode());
+                log.info("RESPONSE STATUS [{}]: {}", routeName, exchange.getResponse().getStatusCode());
             }));
         };
     }
