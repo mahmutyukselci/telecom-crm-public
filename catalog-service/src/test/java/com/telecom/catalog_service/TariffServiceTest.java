@@ -5,7 +5,6 @@ import com.telecom.catalog_service.dto.TariffResponse;
 import com.telecom.catalog_service.exception.TariffNotFoundException;
 import com.telecom.catalog_service.mapper.TariffMapper;
 import com.telecom.catalog_service.model.Tariff;
-import com.telecom.catalog_service.repository.TariffRepository;
 import com.telecom.catalog_service.service.TariffService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,10 +12,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.mongodb.core.MongoTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,7 +26,7 @@ import static org.mockito.Mockito.*;
 class TariffServiceTest {
 
     @Mock
-    private TariffRepository tariffRepository;
+    private MongoTemplate mongoTemplate;
 
     @Mock
     private TariffMapper tariffMapper;
@@ -61,7 +60,7 @@ class TariffServiceTest {
         );
 
         when(tariffMapper.toEntity(request)).thenReturn(tariffEntity);
-        when(tariffRepository.save(tariffEntity)).thenReturn(tariffEntity);
+        when(mongoTemplate.save(tariffEntity)).thenReturn(tariffEntity);
         when(tariffMapper.toResponse(tariffEntity)).thenReturn(expectedResponse);
 
         // When
@@ -72,7 +71,7 @@ class TariffServiceTest {
         assertThat(actualResponse.id()).isEqualTo("tar-100");
         assertThat(actualResponse.isActive()).isFalse();
 
-        verify(tariffRepository, times(1)).save(tariffEntity);
+        verify(mongoTemplate, times(1)).save(tariffEntity);
     }
 
     // ========================================================================
@@ -89,7 +88,7 @@ class TariffServiceTest {
                 tariffId, "Standard 10GB", null, BigDecimal.TEN, 10, 500, 500, true, 30
         );
 
-        when(tariffRepository.findById(tariffId)).thenReturn(Optional.of(tariff));
+        when(mongoTemplate.findById(tariffId, Tariff.class)).thenReturn(tariff);
         when(tariffMapper.toResponse(tariff)).thenReturn(expectedResponse);
 
         // When
@@ -97,7 +96,7 @@ class TariffServiceTest {
 
         // Then
         assertThat(actualResponse.id()).isEqualTo(tariffId);
-        verify(tariffRepository, times(1)).findById(tariffId);
+        verify(mongoTemplate, times(1)).findById(tariffId, Tariff.class);
     }
 
     @Test
@@ -105,14 +104,14 @@ class TariffServiceTest {
     void getTariffById_whenNotFound_shouldThrowException() {
         // Given
         String tariffId = "missing-id";
-        when(tariffRepository.findById(tariffId)).thenReturn(Optional.empty());
+        when(mongoTemplate.findById(tariffId, Tariff.class)).thenReturn(null);
 
         // When & Then
         assertThatThrownBy(() -> tariffService.getTariffById(tariffId))
                 .isInstanceOf(TariffNotFoundException.class)
                 .hasMessageContaining("Tariff not found");
 
-        verify(tariffRepository, times(1)).findById(tariffId);
+        verify(mongoTemplate, times(1)).findById(tariffId, Tariff.class);
     }
 
     @Test
@@ -122,7 +121,7 @@ class TariffServiceTest {
         Tariff t1 = Tariff.builder().id("1").name("Tariff A").build();
         Tariff t2 = Tariff.builder().id("2").name("Tariff B").build();
 
-        when(tariffRepository.findAll()).thenReturn(List.of(t1, t2));
+        when(mongoTemplate.findAll(Tariff.class)).thenReturn(List.of(t1, t2));
         when(tariffMapper.toResponse(any())).thenReturn(mock(TariffResponse.class));
 
         // When
@@ -130,7 +129,7 @@ class TariffServiceTest {
 
         // Then
         assertThat(result).hasSize(2);
-        verify(tariffRepository, times(1)).findAll();
+        verify(mongoTemplate, times(1)).findAll(Tariff.class);
     }
 
     // ========================================================================
@@ -158,9 +157,9 @@ class TariffServiceTest {
                 50, 1000, 1000, true, 30
         );
 
-        when(tariffRepository.findById(tariffId)).thenReturn(Optional.of(existingTariff));
+        when(mongoTemplate.findById(tariffId, Tariff.class)).thenReturn(existingTariff);
         doNothing().when(tariffMapper).updateTariffFromRequest(request, existingTariff);
-        when(tariffRepository.save(existingTariff)).thenReturn(existingTariff);
+        when(mongoTemplate.save(existingTariff)).thenReturn(existingTariff);
         when(tariffMapper.toResponse(existingTariff)).thenReturn(expectedResponse);
 
         // When
@@ -170,8 +169,8 @@ class TariffServiceTest {
         assertThat(existingTariff.isActive()).isTrue();
         assertThat(actualResponse.isActive()).isTrue();
 
-        verify(tariffRepository, times(1)).findById(tariffId);
-        verify(tariffRepository, times(1)).save(existingTariff);
+        verify(mongoTemplate, times(1)).findById(tariffId, Tariff.class);
+        verify(mongoTemplate, times(1)).save(existingTariff);
     }
 
     @Test
@@ -179,13 +178,13 @@ class TariffServiceTest {
     void updateTariff_whenNotFound_shouldThrowException() {
         // Given
         String missingId = "missing-update-id";
-        when(tariffRepository.findById(missingId)).thenReturn(Optional.empty());
+        when(mongoTemplate.findById(missingId, Tariff.class)).thenReturn(null);
 
         // When & Then
         assertThatThrownBy(() -> tariffService.updateTariff(missingId, mock(TariffRequest.class), true))
                 .isInstanceOf(TariffNotFoundException.class);
 
-        verify(tariffRepository, never()).save(any());
+        verify(mongoTemplate, never()).save(any());
     }
 
     // ========================================================================
@@ -197,15 +196,17 @@ class TariffServiceTest {
     void deleteTariff_whenExists_shouldDelete() {
         // Given
         String tariffId = "tar-400";
-        when(tariffRepository.existsById(tariffId)).thenReturn(true);
-        doNothing().when(tariffRepository).deleteById(tariffId);
+        Tariff tariff = Tariff.builder().id(tariffId).build();
+
+        // Assumes service does a findById before deleting
+        when(mongoTemplate.findById(tariffId, Tariff.class)).thenReturn(tariff);
 
         // When
         tariffService.deleteTariff(tariffId);
 
         // Then
-        verify(tariffRepository, times(1)).existsById(tariffId);
-        verify(tariffRepository, times(1)).deleteById(tariffId);
+        verify(mongoTemplate, times(1)).findById(tariffId, Tariff.class);
+        verify(mongoTemplate, times(1)).remove(tariff);
     }
 
     @Test
@@ -213,12 +214,12 @@ class TariffServiceTest {
     void deleteTariff_whenNotFound_shouldThrowException() {
         // Given
         String missingId = "missing-delete-id";
-        when(tariffRepository.existsById(missingId)).thenReturn(false);
+        when(mongoTemplate.findById(missingId, Tariff.class)).thenReturn(null);
 
         // When & Then
         assertThatThrownBy(() -> tariffService.deleteTariff(missingId))
                 .isInstanceOf(TariffNotFoundException.class);
 
-        verify(tariffRepository, never()).deleteById(anyString());
+        verify(mongoTemplate, never()).remove(any());
     }
 }

@@ -13,30 +13,31 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 @EnableWebFluxSecurity
 public class SecurityConfig {
 
-        @Bean
-        public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
 
-                JwtAuthenticationConverter jwtAuthConverter = new JwtAuthenticationConverter();
-                jwtAuthConverter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter());
+        JwtAuthenticationConverter jwtAuthConverter = new JwtAuthenticationConverter();
+        jwtAuthConverter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter());
 
-                ReactiveJwtAuthenticationConverterAdapter reactiveAdapter = new ReactiveJwtAuthenticationConverterAdapter(
-                                jwtAuthConverter);
+        ReactiveJwtAuthenticationConverterAdapter reactiveAdapter =
+                new ReactiveJwtAuthenticationConverterAdapter(jwtAuthConverter);
 
-                http
-                                .csrf(ServerHttpSecurity.CsrfSpec::disable)
-                                .authorizeExchange(exchanges -> exchanges
-                                                .pathMatchers(
-                                                                "/swagger-ui.html",
-                                                                "/swagger-ui/**",
-                                                                "/v3/api-docs/**",
-                                                                "/webjars/swagger-ui/**",
-                                                                "/actuator/**",
-                                                                "/eureka/**")
-                                                .permitAll()
-                                                .anyExchange().authenticated())
-                                .oauth2ResourceServer(oauth2 -> oauth2
-                                                .jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveAdapter)));
+        http
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .authorizeExchange(exchanges -> exchanges
+                        .pathMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**",
+                                "/webjars/swagger-ui/**",
+                                "/actuator/**"
+                        ).permitAll()
+                        .anyExchange().authenticated()
+                )
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveAdapter))
+                );
 
-                return http.build();
-        }
+        return http.build();
+    }
 }

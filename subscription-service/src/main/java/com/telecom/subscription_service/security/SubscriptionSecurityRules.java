@@ -35,7 +35,7 @@ public class SubscriptionSecurityRules {
     private final SubscriptionAddonRepository subscriptionAddonRepository;
 
     public boolean isOwnerOfAddon(String addonId, Authentication authentication) {
-        if (authentication == null || !(authentication.getPrincipal() instanceof Jwt)) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof Jwt jwt)) {
             return false;
         }
         return subscriptionAddonRepository.findById(addonId)

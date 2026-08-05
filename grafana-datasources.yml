@@ -1,0 +1,38 @@
+apiVersion: 1
+
+datasources:
+  # 1. PROMETHEUS (Metrics)
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Service name and port inside the Docker network
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+
+  # 2. TEMPO (Distributed Traces)
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: true
+    jsonData:
+      # Link configuration to navigate from Tempo to Loki (Trace -> Logs)
+      tracesToLogsV2:
+        datasourceUid: 'loki'
+        tags: ['app', 'compose_service']
+
+  # 3. LOKI (Logs)
+  - name: Loki
+    uid: loki # Custom UID so Tempo can reference this datasource
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      # Link configuration to navigate from Loki to Tempo (Logs -> Trace)
+      derivedFields:
+        - datasourceUid: Tempo
+          matcherRegex: "traceId=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"

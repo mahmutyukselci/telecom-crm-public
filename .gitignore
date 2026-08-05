@@ -1,9 +1,17 @@
-# IDE & System Files
-.idea/
-*.iml
-.DS_Store
-
-# Build & Logs
+# Target directories
 **/target/
 **/*.jar
+**/*.war
+**/*.ear
+**/*.class
+
+# IDE & OS files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
+logs/

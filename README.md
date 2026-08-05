@@ -1,393 +1,508 @@
-# Telecom CRM — Enterprise Microservice Ecosystem
-## System Architecture & Technical Design Specification
+# 📄 Telecom CRM — Enterprise Microservice Ecosystem
+## Complete Engineering & Architecture Documentation
 
-> **Document Version:** 2.0  
-> **Target Platform:** Java 21 / 25 | Spring Boot 4.1.0 | Spring Cloud 2025.1.2  
-> **Author:** Mahmut Yükselci  
-> **Company:** PIA Bilişim A.Ş. 
-
----
-
-## 1. Executive Summary & System Intent
-
-**Telecom CRM** is a high-throughput, event-driven telecommunications and Customer Relationship Management (CRM) system designed for enterprise operational environments. The platform addresses core telecom domain challenges:
-* **Polyglot Persistence:** Tailoring databases to specific workload requirements (PostgreSQL for ACID compliance, MongoDB for dynamic product catalogs, Redis for sub-millisecond caching and distributed locking).
-* **BPMN 2.0 Workflow Automation:** Declarative orchestration of complex subscription lifecycles using Flowable engine instead of brittle programmatic state machines.
-* **Guaranteed Event Delivery:** Eliminating the dual-write problem between relational storage and message brokers via the Transactional Outbox pattern.
-* **Zero-Trust IAM & Data Isolation:** Centralized OAuth2/OIDC token verification via Keycloak with custom SPI event listeners and fine-grained SpEL method security (`isOwner`).
-* **Complete System Observability:** Unified logging, metrics, and tracing using the LGTM stack (Loki, Grafana, Tempo, Prometheus).
+**Author / Intern:** Mahmut Yükselci  
+**Company:** Pia Bilişim A.Ş.  
+**Project Status:** Production-Ready / Completed  
+**Technology Stack:** Java 25, Spring Boot 3.4 / 4.1, Spring Cloud Gateway, Flowable BPMN, Keycloak 26, Apache Kafka, PostgreSQL 16, MongoDB 8.2, Redis, Grafana/Loki/Tempo/Prometheus, Docker Compose  
 
 ---
 
-## 2. High-Level System Architecture
+## 📑 Table of Contents
 
-### 2.1. System Context Diagram (Mermaid)
+1. [Executive Summary & Internship Context](#1-executive-summary--internship-context)
+2. [High-Level Architecture & Engineering Patterns](#2-high-level-architecture--engineering-patterns)
+   - [12-Factor App & Docker Internal DNS Service Discovery](#12-factor-app--docker-internal-dns-service-discovery)
+   - [Polyglot Persistence Strategy](#polyglot-persistence-strategy)
+   - [Transactional Outbox Pattern & Zero Dual-Write Risk](#transactional-outbox-pattern--zero-dual-write-risk)
+   - [Zero-Trust RBAC & Bearer Token Propagation](#zero-trust-rbac--bearer-token-propagation)
+   - [Flowable BPMN State Machine Workflow](#flowable-bpmn-state-machine-workflow)
+   - [Deduplication & Distributed Locking in Messaging](#deduplication--distributed-locking-in-messaging)
+3. [System Architecture Diagram](#3-system-architecture-diagram)
+4. [Microservices Breakdown & Component Specifications](#4-microservices-breakdown--component-specifications)
+   - [4.1 API Gateway (`api-gateway`)](#41-api-gateway-api-gateway)
+   - [4.2 Customer Service (`customer-service`)](#42-customer-service-customer-service)
+   - [4.3 Catalog Service (`catalog-service`)](#43-catalog-service-catalog-service)
+   - [4.4 Subscription Service (`subscription-service`)](#44-subscription-service-subscription-service)
+   - [4.5 Notification Service (`notification-service`)](#45-notification-service-notification-service)
+   - [4.6 Common Utilities (`common-utils`)](#46-common-utilities-common-utils)
+   - [4.7 Keycloak Custom Event Listener SPI (`keycloak-custom-listener`)](#47-keycloak-custom-event-listener-spi-keycloak-custom-listener)
+5. [Keycloak IAM & Identity Synchronization Flow](#5-keycloak-iam--identity-synchronization-flow)
+6. [Flowable BPMN 2.0 Business Workflow Engine](#6-flowable-bpmn-20-business-workflow-engine)
+7. [Database Schemas & Data Models](#7-database-schemas--data-models)
+8. [Messaging & Event Payload Specifications](#8-messaging--event-payload-specifications)
+9. [Observability & OTLP Telemetry Stack](#9-observability--otlp-telemetry-stack)
+10. [Zero-Trust Security & Permission Matrix](#10-zero-trust-security--permission-matrix)
+11. [Deployment, Build & Verification Guide](#11-deployment-build--verification-guide)
+12. [Conclusion & Internship Deliverables](#12-conclusion--internship-deliverables)
+
+---
+
+## 1. Executive Summary & Internship Context
+
+This document presents the complete technical and architectural documentation for the **Telecom CRM Enterprise Microservice Ecosystem**, designed and implemented by **Mahmut Yükselci** during the internship program at **Pia Bilişim A.Ş.**.
+
+The goal of this project was to build a modern, high-throughput, cloud-native Telecommunications Customer Relationship Management (CRM) system simulation capable of handling complex subscription lifecycles, user authentication, catalog management, event-driven messaging, and notifications with zero downtime, zero dual-write data loss risks, and full end-to-end telemetry.
+
+### Key Internship Achievements:
+- **Architected 5 standalone Spring Boot microservices** operating under Java 25 and Spring Boot 3.4+.
+- **Implemented Polyglot Persistence**: Combined PostgreSQL (relational CRM & transactional outbox), MongoDB (high-performance product catalog), and Redis (distributed caching, lock management, and rate limiting).
+- **Designed Event-Driven Architecture with Transactional Outbox**: Eliminated dual-write anomalies using PostgreSQL outbox tables, background schedulers (`OutboxRelayScheduler`), and Apache Kafka.
+- **Engineered Custom Keycloak SPI**: Built a custom Java-based Keycloak Event Listener SPI (`keycloak-custom-listener`) that automatically synchronizes IAM registration and profile update events to internal microservice webhooks using OAuth2 Client Credentials service account tokens.
+- **Orchestrated Complex Subscription Lifecycles with Flowable BPMN**: Replaced rigid imperatively coded state machines with Flowable BPMN 2.0 process engine (`subscreation.bpmn20.xml`) featuring custom Java delegates and error boundary event handling.
+- **Integrated Full Observability (LGTM Stack)**: Configured OpenTelemetry (OTLP), Prometheus, Grafana, Loki, and Tempo for distributed trace propagation (`traceparent` header correlation across REST and Kafka).
+- **Enforced Zero-Trust Security**: Standardized JWT Bearer token propagation across internal microservices via custom Spring `RestClient` request interceptors (`BearerTokenInterceptor`).
+
+---
+
+## 2. High-Level Architecture & Engineering Patterns
+
+```
++---------------------------------------------------------------------------------------------------+
+|                                     TELECOM CRM ECOSYSTEM                                         |
++---------------------------------------------------------------------------------------------------+
+|                                                                                                   |
+|  [ Client / Postman / Web ] ---> [ API Gateway: 8080 ] ---> [ Microservices ] ---> [ Databases ]  |
+|                                         |                         |                        |      |
+|                                    (Keycloak JWKS)           (Kafka Broker)           (PG/Mongo)  |
+|                                         |                         |                        |      |
+|                                  [ Keycloak: 8081 ]      [ Notification Svc ]      [ Redis ]     |
+|                                                                                                   |
++---------------------------------------------------------------------------------------------------+
+```
+
+### 12-Factor App & Docker Internal DNS Service Discovery
+Traditional service registry solutions (e.g., Netflix Eureka) introduce single-point-of-failure overhead and client-side heartbeat polling. In this ecosystem:
+- Microservices use **Docker Internal DNS** for service-to-service resolution (`http://customer-service:8084`, `http://catalog-service:8083`, `http://subscription-service:8082`, `http://notification-service:8085`).
+- Environment configuration is externalized adhering to 12-factor app principles using `.env` files and `spring-dotenv`.
+
+### Polyglot Persistence Strategy
+Different domains demand distinct data storage semantics:
+1. **Relational CRM & Workflows (PostgreSQL 16)**:
+   - `customer_schema`: Stores customer profiles linked with Keycloak user UUIDs.
+   - `subscription_schema`: Stores active/expired subscriptions and add-on mappings.
+   - `notification_schema`: Stores processed event IDs and dispatch audit logs.
+2. **Flexible Document Store (MongoDB 8.2)**:
+   - `catalog_db.tariffs`: Stores telecom plan definitions with varying data, voice, SMS limits, pricing, and validity.
+3. **In-Memory Store (Redis 7.x)**:
+   - Gateway rate-limiting (`userIpKeyResolver`).
+   - Catalog service `@Cacheable` tariff caching.
+   - ShedLock & distributed event deduplication locks.
+
+### Transactional Outbox Pattern & Zero Dual-Write Risk
+Directly publishing Kafka events inside a database transaction risks partial failure (e.g., DB commits but Kafka is down, or Kafka publishes but DB transaction rolls back).
+- **Solution**: Microservices write business state and event records (`outbox_events` table) in a **single ACID transaction**.
+- An `@Scheduled` background worker (`OutboxRelayScheduler`) polls pending events (`status = 'PENDING'`), publishes them to Kafka via `KafkaTemplate`, and marks them as `PROCESSED`.
+
+### Zero-Trust RBAC & Bearer Token Propagation
+- All requests pass through **API Gateway** which validates incoming OAuth2 JWT tokens against Keycloak's JWKS endpoint (`/protocol/openid-connect/certs`).
+- Internal microservice-to-microservice communication uses `RestClient` configured with `BearerTokenInterceptor` to forward the incoming user's SecurityContext Bearer Token, preserving identity context across calls without hardcoded service credentials.
+
+### Flowable BPMN State Machine Workflow
+Subscription creation is orchestrated using Flowable BPMN engine. The process steps through:
+1. `VerifyCustomerTask`: Validates customer existence via `CustomerServiceClient`.
+2. `VerifyTariffTask`: Validates tariff active status via `CatalogServiceClient`.
+3. `SaveSubscriptionTask`: Persists subscription & outbox event.
+4. Error Boundary Events: If customer/tariff is not found or inactive, execution routes seamlessly to rejected states.
+
+### Deduplication & Distributed Locking in Messaging
+`NotificationService` processes Kafka events with strict **At-Least-Once** and **Exactly-Once** delivery semantics:
+- **Redis Lock**: Prevents duplicate concurrent consumer execution.
+- **PostgreSQL Deduplication**: Checks `processed_events` table for `event_id` before invoking notification providers.
+- **Resilience4j & DLQ**: Failed notifications retry up to 3 times before routing to `subscription-dlq`.
+
+---
+
+## 3. System Architecture Diagram
+
+```text
+=====================================================================================================================
+                                   TELECOM CRM - DOCKER DDNS ARCHITECTURE
+=====================================================================================================================
+
+                                       [ Web / Mobile Clients ]
+                                                  |
+                                                  | (REST / HTTPS + Bearer JWT)
+                                                  v
++-------------------------------------------------------------------------------------------------------------------+
+|                                            API GATEWAY (Port: 8080)                                               |
+|  - Spring Cloud Gateway (WebFlux)   - JWT Validation (Keycloak JWKS)   - Redis Rate Limiter (userIpKeyResolver)   |
++-------------------------------------------------------------------------------------------------------------------+
+           |                                     |                                         |
+           | (Route: /api/v1/tariffs)            | (Route: /api/v1/customers)              | (Route: /api/v1/subs)
+           v                                     v                                         v
++-------------------------+            +-------------------------+               +-------------------------+
+|     CATALOG SERVICE     |            |    CUSTOMER SERVICE     |               |  SUBSCRIPTION SERVICE   |
+| - MongoTemplate         | (Sync)     | - Spring Data JPA       |    (Sync)     | - Spring Data JPA       |
+| - @Cacheable (Redis)    |<---------->| - Flyway Migrations     |<------------->| - Flowable BPMN Engine  |
+| - RestClient            |            | - RestClient            |               | - RestClient            |
++------------+------------+            +------------+------------+               +------------+------------+
+           |                                      |                                         |
+           v                                      | (Transactional Outbox)                  | (Transactional Outbox)
+   [ MongoDB (8.2) ]                              v                                         v
+   [ Redis Cache   ]                     [ PostgreSQL (16) ]                       [ PostgreSQL (16) ]
+                                         [ Outbox Table    ]                       [ Outbox Table    ]
+                                                  |                                         |
+                                                  | (Outbox Poller / Scheduler)             | (Outbox Poller)
+==================================================|=========================================|======================
+                                                  v                                         v
+                                  +-------------------------------------------------------------+
++------------------+ (Custom SPI) |                        APACHE KAFKA                         |
+|   KEYCLOAK IAM   |------------->|   (Message Broker for Async Event-Driven Communication)     |
+| - OAuth2 / OIDC  | (User Events)+-------------------------------+-----------------------------+
+| - Custom SPI     |                                              |
++------------------+                                              | (Consumes: UserCreated, SubActivated, etc.)
+                                                                  v
+                                                  +-------------------------+
+                                                  |  NOTIFICATION SERVICE   |
+                                                  | - Kafka Consumer        |
+                                                  | - Resilience4j (Retry)  |
+                                                  | - PostgreSQL (Logs)     |
+                                                  +------------+------------+
+                                                               | (Sync REST via RestClient)
+                                                               v
+                                                    [ TEXTBEE SMS API / EMAIL ]
+
+=====================================================================================================================
+                                      OBSERVABILITY & TRACING (OTLP STACK)
+=====================================================================================================================
+All services asynchronously send metrics and traces via (Micrometer + OTLP Bridge) to the following stack:
+
+[ Spring Boot Logs ] ---------(Log Streams)-------> [ LOKI ] -----------\
+                                                                         +---> [ GRAFANA (Port: 3000) ]
+[ Micrometer OTLP ] ----------(TraceID/SpanID)----> [ TEMPO ] ---------/       (Datasources auto-configured,
+                                                                         \      Unified Dashboard)
+[ Micrometer OTLP ] ----------(CPU/Mem Metrics)---> [ PROMETHEUS ] ------+
+=====================================================================================================================
+```
+
+---
+
+## 4. Microservices Breakdown & Component Specifications
+
+### 4.1 API Gateway (`api-gateway`)
+- **Port**: `8080`
+- **Framework**: Spring Cloud Gateway (Reactive / WebFlux)
+- **Role**: Entry point for all external client traffic. Handles JWT authorization, rate limiting, and route forwarding.
+- **Key Components**:
+  - `SecurityConfig.java`: Configures Spring Security Reactive resource server with Keycloak JWKS validation.
+  - `RateLimiterConfig.java`: Implements Redis Request Rate Limiting (`userIpKeyResolver`) enforcing per-IP / per-user quotas.
+  - `SwaggerRouteConfig.java`: Aggregates OpenAPI specs from downstream microservices into a single Swagger UI accessible at `/swagger-ui.html`.
+
+### 4.2 Customer Service (`customer-service`)
+- **Port**: `8084`
+- **Database**: PostgreSQL (`customer_schema.customers`, `customer_schema.outbox_events`)
+- **Role**: Manages customer domain entities, profile updates, and Keycloak user webhooks.
+- **Key Components**:
+  - `CustomerController.java`: Endpoints for fetching customer details (`GET /api/v1/customers/{id}`) and handling Keycloak synchronization webhooks (`PUT /api/v1/customers/webhook`, `DELETE /api/v1/customers/webhook/{userId}`).
+  - `CustomerService.java`: Business logic for customer CRUD operations and transactional outbox event insertion.
+  - `CustomerSecurityRules.java`: Evaluates ownership checks ensuring regular users can only read/update their own customer profiles.
+
+### 4.3 Catalog Service (`catalog-service`)
+- **Port**: `8083`
+- **Database**: MongoDB (`catalog_db.tariffs`), Redis Cache
+- **Role**: Serves product plans and tariffs with ultra-fast cached responses.
+- **Key Components**:
+  - `TariffController.java`: Endpoints for listing tariffs (`GET /api/v1/tariffs`), creating tariffs (`POST /api/v1/tariffs`), and updating plan details.
+  - `TariffService.java`: Uses Spring Data MongoTemplate and Redis `@Cacheable(value = "tariffs")` for instant read performance.
+  - `Tariff.java`: MongoDB document representing plan metadata (voice minutes, data GB, SMS limit, price, active status).
+
+### 4.4 Subscription Service (`subscription-service`)
+- **Port**: `8082`
+- **Database**: PostgreSQL (`subscription_schema.subscriptions`, `subscription_schema.subscription_addons`, `subscription_schema.outbox_events`, `subscription_schema.shedlock`), Redis
+- **Role**: Orchestrates subscription purchasing, lifecycle state transitions, expiration background jobs, and Flowable BPMN workflow execution.
+- **Key Components**:
+  - `SubscriptionController.java`: Endpoint for creating subscriptions (`POST /api/v1/subscriptions`).
+  - `WorkflowHistoryController.java`: Visualizes BPMN process execution steps and serves BPMN XML diagram (`/api/v1/history/bpmn-xml`).
+  - `VerifyCustomerDelegate.java` & `VerifyTariffDelegate.java`: Java BPMN delegates executing REST checks against Customer and Catalog services.
+  - `SaveSubscriptionDelegate.java`: BPMN delegate persisting subscription records and queuing `SUBSCRIPTION_CREATED` outbox events.
+  - `OutboxRelayScheduler.java`: `@Scheduled` task publishing outbox events to Kafka topic `subscription-events`.
+  - `SubscriptionExpiryJob.java`: ShedLock-guaranteed scheduled job transitioning expired subscriptions to `EXPIRED` status.
+
+### 4.5 Notification Service (`notification-service`)
+- **Port**: `8085`
+- **Database**: PostgreSQL (`notification_schema.processed_events`, `notification_schema.notification_logs`), Redis
+- **Role**: Asynchronously consumes subscription events from Kafka and dispatches SMS/Email notifications.
+- **Key Components**:
+  - `SubscriptionNotificationListener.java`: Kafka consumer for `subscription-events` topic.
+  - `SubscriptionNotificationDeadLetterListener.java`: Kafka consumer for `subscription-dlq` topic.
+  - `NotificationDeliveryService.java`: Invokes SMS providers (TextBee API or MockProvider) wrapped with Resilience4j `@Retry`.
+  - `ProcessedEvent.java`: Tracks processed event UUIDs to guarantee idempotent execution.
+
+### 4.6 Common Utilities (`common-utils`)
+- **Type**: Shared Maven Library
+- **Role**: Centralizes cross-cutting concerns across all microservices.
+- **Key Components**:
+  - `BearerTokenInterceptor.java`: Spring HTTP Client Interceptor extracting JWT tokens from current `SecurityContext` and attaching them to outgoing `RestClient` requests.
+  - `GlobalExceptionHandler.java`: Standardized API error response payload structures (`ErrorResponseDto`).
+  - `SecurityUtils.java`: Utility methods for extracting user IDs and roles from JWT claims.
+
+### 4.7 Keycloak Custom Event Listener SPI (`keycloak-custom-listener`)
+- **Type**: Keycloak Provider SPI (JAR packaged into Keycloak image)
+- **Role**: Listens for internal Keycloak IAM events and triggers webhook calls to `customer-service`.
+- **Key Components**:
+  - `CustomEventListenerProvider.java`: Catches `REGISTER`, `UPDATE_PROFILE`, and `DELETE_ACCOUNT` events.
+  - `ServiceAccountTokenProvider.java`: Obtains OAuth2 Client Credentials access tokens for `internal-sync-client` service account.
+
+---
+
+## 5. Keycloak IAM & Identity Synchronization Flow
+
+When a user signs up or updates their profile in Keycloak, the custom Keycloak SPI synchronizes user metadata with Customer Service in real-time.
 
 ```mermaid
-graph TD
-    User([Client / Web User]) -->|HTTPS + JWT| Gateway[API Gateway :8080<br/>Spring Cloud Gateway]
+sequenceDiagram
+    autonumber
+    actor User
+    participant Keycloak as Keycloak IAM
+    participant SPI as CustomEventListenerProvider (SPI)
+    participant Gateway as API Gateway
+    participant CustomerSvc as Customer Service
+    participant DB as PostgreSQL (Customer DB)
+
+    User->>Keycloak: User Registers / Updates Profile
+    Keycloak->>SPI: Fires Event (REGISTER / UPDATE_PROFILE)
+    SPI->>Keycloak: Request Client Token (Service Account)
+    Keycloak-->>SPI: Return JWT Access Token
+    SPI->>Gateway: PUT /api/v1/customers/webhook (Bearer JWT + Payload)
+    Gateway->>CustomerSvc: Forward Webhook Request
+    CustomerSvc->>DB: Upsert Customer Record & Insert Outbox Event
+    CustomerSvc-->>SPI: 200 OK / 201 Created
+```
+
+---
+
+## 6. Flowable BPMN 2.0 Business Workflow Engine
+
+The subscription workflow (`subscreation.bpmn20.xml`) decouples process logic from standard code paths, allowing step-by-step verification and visual tracing.
+
+```mermaid
+flowchart TD
+    Start([Start Subscription Request]) --> VerifyCust[Task 1: Verify Customer Existence]
+    VerifyCust -->|Customer OK| VerifyTariff[Task 2: Verify Tariff & Status]
+    VerifyCust -->|Customer Not Found| CustErr[Boundary Event: CUSTOMER_NOT_FOUND]
+    CustErr --> RejectSub[Status: REJECTED]
     
-    subgraph IAM ["Identity & Access Management"]
-        KC[Keycloak IAM :8081]
-        SPI[Keycloak Custom Listener SPI]
-        KC --> SPI
-    end
-
-    Gateway -->|JWT Validation| KC
-    SPI -->|Webhook Sync| Gateway
-
-    subgraph Microservices ["Domain Microservices Ecosystem"]
-        Gateway -->|Route /api/v1/customers| CustSvc[Customer Service :8082]
-        Gateway -->|Route /api/v1/tariffs| CatSvc[Catalog Service :8083]
-        Gateway -->|Route /api/v1/subscriptions| SubSvc[Subscription Service :8084]
-        
-        SubSvc -->|Sync OpenFeign| CatSvc
-        SubSvc -->|Sync OpenFeign| CustSvc
-    end
-
-    subgraph DataLayer ["Polyglot Persistence Layer"]
-        CustSvc -->|ACID Profile Data| PG_Cust[(PostgreSQL)]
-        SubSvc -->|BPMN State & Outbox| PG_Sub[(PostgreSQL)]
-        CatSvc -->|Dynamic Schemas| Mongo[(MongoDB)]
-        CatSvc -->|Cache| Redis[(Redis)]
-    end
-
-    subgraph EventStreaming ["Event-Driven Backbone"]
-        CustSvc -->|Transactional Outbox| Kafka{Apache Kafka :9092}
-        SubSvc -->|Transactional Outbox| Kafka
-        Kafka -->|Topics| NotifSvc[Notification Service :8085]
-        NotifSvc -->|Idempotency Lock| Redis
-        NotifSvc -->|Processed Events| PG_Notif[(PostgreSQL)]
-    end
-
-    subgraph Observability ["LGTM Observability Stack"]
-        Prom[Prometheus :9090]
-        Loki[Loki :3100]
-        Tempo[Tempo :3200]
-        Grafana[Grafana Dashboard :3000]
-        
-        Prom --> Grafana
-        Loki --> Grafana
-        Tempo --> Grafana
-    end
+    VerifyTariff -->|Tariff OK & Active| SaveSub[Task 3: Save Subscription & Outbox Event]
+    VerifyTariff -->|Tariff Not Found / Inactive| TariffErr[Boundary Event: TARIFF_NOT_FOUND / INACTIVE]
+    TariffErr --> RejectSub
+    
+    SaveSub --> End([End: Subscription ACTIVE])
+    RejectSub --> EndRejected([End: Process Terminated])
 ```
+
+### Visual Workflow Inspector (`history.html`)
+The `subscription-service` exposes an embedded interactive BPMN visualizer powered by `bpmn-js`. Users and operators can view real-time process diagrams and audit execution histories directly via browser.
 
 ---
 
-## 3. Microservice Specifications & Data Ownership
+## 7. Database Schemas & Data Models
 
-| Service Name | Port | Primary Database | Secondary Data Store | Main Responsibility |
-| :--- | :--- | :--- | :--- | :--- |
-| **`api-gateway`** | 8080 | N/A | N/A | Central entry point, reactive WebFlux routing, CORS, JWT decoding. |
-| **`catalog-service`** | 8083 | **MongoDB** | **Redis** | Flexible tariff catalog storage & high-speed read caching. |
-| **`customer-service`**| 8082 | **PostgreSQL** | N/A | Customer profiles, relational identity, transactional outbox producer. |
-| **`subscription-service`**| 8084 | **PostgreSQL** | N/A | BPMN 2.0 purchasing flow, Flowable engine state, Quartz expiry jobs. |
-| **`notification-service`**| 8085 | **PostgreSQL** | **Redis** | Kafka event consumer, SMS/Email delivery, Redis idempotency locking. |
-| **`discovery-server`** | 8761 | N/A | N/A | Service registry (Netflix Eureka). |
-| **`config-server`** | 8888 | N/A | Git Repo | Centralized application configuration. |
-| **`keycloak-custom-listener`** | 8081 | Embedded | N/A | Keycloak SPI plugin for webhook event dispatching. |
+### PostgreSQL Schemas
 
-### 3.1. Detailed Service Analysis & Technical Justification
+#### 1. `customer_schema.customers`
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | VARCHAR(36) | PRIMARY KEY | Internal Customer UUID |
+| `first_name` | VARCHAR(50) | NOT NULL | Customer First Name |
+| `last_name` | VARCHAR(50) | NOT NULL | Customer Last Name |
+| `email` | VARCHAR(150) | UNIQUE, NOT NULL | Customer Email Address |
+| `phone` | VARCHAR(20) | NOT NULL | Customer Mobile Phone |
+| `keycloak_user_id`| VARCHAR(255) | UNIQUE | Linked Keycloak IAM User ID |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Registration Timestamp |
 
-#### 1. `catalog-service`
-* **Why MongoDB?** Telecom product packages frequently evolve. Data plan tariffs contain attributes (e.g., rollover data speed, roaming regions, 5G flags) completely different from landline broadband tariffs. MongoDB's document model allows storing variable JSON structures without complex SQL schema migrations.
-* **Why Redis Caching?** Tariffs are queried heavily by thousands of users browsing plans, but modified rarely by admins. Read requests hit Redis first (`@Cacheable(value = "tariffs")`). Cache eviction occurs automatically on mutations (`@CacheEvict`).
+#### 2. `subscription_schema.subscriptions`
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | VARCHAR(36) | PRIMARY KEY | Subscription UUID |
+| `customer_id` | VARCHAR(50) | NOT NULL, INDEX | Foreign Key to Customer |
+| `tariff_id` | VARCHAR(50) | NOT NULL | Foreign Key to Tariff |
+| `keycloak_user_id`| VARCHAR(255) | INDEX | Owner Keycloak User ID |
+| `start_date` | TIMESTAMP | NOT NULL | Subscription Start Date |
+| `end_date` | TIMESTAMP | NULLABLE | Expiration Timestamp |
+| `status` | VARCHAR(50) | NOT NULL, INDEX | `ACTIVE`, `EXPIRED`, `CANCELLED`, `REJECTED` |
 
-#### 2. `customer-service`
-* **Why PostgreSQL?** Customer profile information requires strict ACID semantics, relational integrity, and long-term auditability. Database schemas are versioned and applied automatically using **Flyway** (`src/main/resources/db/migration`).
-* **Outbox Producer:** Stores outbox event payloads inside the `outbox_events` table in the same transaction as customer entity changes.
+#### 3. Transactional Outbox Schema (`outbox_events`)
+Used in both `customer-service` and `subscription-service`:
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | VARCHAR(36) | PRIMARY KEY | Event UUID |
+| `aggregate_type` | VARCHAR(255) | NOT NULL | Aggregate Type (e.g. `SUBSCRIPTION`, `CUSTOMER`) |
+| `aggregate_id` | VARCHAR(255) | NOT NULL | ID of affected entity |
+| `type` | VARCHAR(255) | NOT NULL | Event Type (`SUBSCRIPTION_CREATED`, `CUSTOMER_REGISTERED`) |
+| `payload` | TEXT / JSONB | NOT NULL | Serialized JSON Event Data |
+| `status` | VARCHAR(50) | NOT NULL | `PENDING`, `PROCESSED`, `FAILED` |
+| `created_at` | TIMESTAMP | NOT NULL | Creation Time |
 
-#### 3. `subscription-service`
-* **Why PostgreSQL & Flowable Engine?** A subscription is a legally binding contract. The Flowable BPMN engine requires a relational database to maintain process execution state, history, and variable tables (`ACT_RU_EXECUTION`, `ACT_HI_PROCINST`).
-* **Why Quartz Scheduler?** `SubscriptionExpiryJob.java` uses Quartz to run cron jobs off-peak (e.g. nightly). It queries subscriptions approaching their `endDate` and generates `SUBSCRIPTION_EXPIRING` events into the Outbox table.
+#### 4. `notification_schema.notification_logs`
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | SERIAL | PRIMARY KEY | Log Entry ID |
+| `subscription_id` | VARCHAR(255) | NOT NULL | Associated Subscription ID |
+| `message` | TEXT | NOT NULL | Delivered SMS / Email Content |
+| `status` | VARCHAR(50) | NOT NULL | `DELIVERED`, `FAILED` |
+| `sent_at` | TIMESTAMP | DEFAULT NOW() | Transmission Time |
 
-#### 4. `notification-service`
-* **Why Redis + PostgreSQL for Idempotency?** Network latency, consumer rebalances, or retries might deliver a Kafka message multiple times.
-  1. **Phase 1 (Fast Lock):** Redis `setIfAbsent("idempotency:notification:" + eventId, "PROCESSING", 24h)` ensures thread-level concurrency protection.
-  2. **Phase 2 (Persistent Check):** PostgreSQL table `processed_events` acts as the permanent record to ensure an event is processed **Exactly-Once**.
-* **Resilience4j:** Protects external SMS gateway endpoints using Circuit Breakers, Rate Limiters, and Exponential Backoff Retries (`@RetryableTopic` with 5 attempts).
-
----
-
-## 4. Architectural Patterns & Deep Code Breakdown
-
-### Pattern 1: DTO Immutability with Java Records (Java 21/25)
-
-All data transfer objects are written as Java `record` components to guarantee immutability, thread safety, and succinct code.
-
-```java
-package com.telecom.customer_service.dto;
-
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import java.time.LocalDate;
-import java.util.UUID;
-
-// Immutable DTO definition using Java 21+ record syntax
-public record CustomerResponse(
-    UUID id,
-    @NotBlank String firstName,
-    @NotBlank String lastName,
-    @Email String email,
-    String keycloakUserId,
-    LocalDate createdAt
-) {}
-```
-
----
-
-### Pattern 2: Transactional Outbox (Atomicity & Zero Data Loss)
-
-To guarantee that database updates and event publishing succeed or fail together, the Outbox pattern is implemented.
-
-```java
-@Service
-@RequiredArgsConstructor
-public class CustomerService {
-
-    private final CustomerRepository customerRepository;
-    private final OutboxService outboxService;
-    private final ObjectMapper objectMapper;
-
-    @Transactional // Both entity save and outbox insert run inside ONE database transaction
-    public CustomerResponse createCustomer(CustomerRequest request) {
-        Customer customer = new Customer();
-        customer.setFirstName(request.firstName());
-        customer.setLastName(request.lastName());
-        customer.setEmail(request.email());
-        
-        Customer savedCustomer = customerRepository.save(customer);
-
-        // Construct Event Payload
-        CustomerCreatedEvent event = new CustomerCreatedEvent(
-            UUID.randomUUID().toString(),
-            savedCustomer.getId(),
-            savedCustomer.getEmail()
-        );
-
-        // Write to outbox_events table
-        outboxService.saveEvent("CUSTOMER_CREATED", savedCustomer.getId().toString(), toJson(event));
-
-        return toResponse(savedCustomer);
-    }
-}
-```
-
-An asynchronous relay scheduler polls PostgreSQL and publishes to Kafka:
-
-```java
-@Component
-@RequiredArgsConstructor
-public class OutboxRelayScheduler {
-
-    private final OutboxRepository outboxRepository;
-    private final KafkaTemplate<String, String> kafkaTemplate;
-
-    @Scheduled(fixedDelay = 2000) // Polls outbox table every 2 seconds
-    @Transactional
-    public void processOutboxEvents() {
-        List<OutboxEvent> pendingEvents = outboxRepository.findTop50ByProcessedFalseOrderByCreatedAtAsc();
-
-        for (OutboxEvent event : pendingEvents) {
-            kafkaTemplate.send(event.getTopic(), event.getAggregateId(), event.getPayload());
-            event.setProcessed(true);
-            outboxRepository.save(event);
-        }
-    }
+### MongoDB Collection Specifications (`catalog_db.tariffs`)
+```json
+{
+  "_id": "65b2a1f0e4b0c9123456789a",
+  "name": "Platinum Unlimited 5G",
+  "description": "Unlimited high-speed 5G data with global roaming and 1000 mins international calls",
+  "price": 499.99,
+  "dataLimitGb": 100,
+  "voiceLimitMinutes": 5000,
+  "smsLimit": 1000,
+  "isActive": true,
+  "validityDays": 30
 }
 ```
 
 ---
 
-### Pattern 3: Flowable BPMN 2.0 Purchasing Workflow
+## 8. Messaging & Event Payload Specifications
 
-Complex subscription creation is modeled declaratively in `subscreation.bpmn20.xml`.
+All events published to Kafka follow a strict JSON structure guaranteeing contract compatibility.
+
+### Kafka Topics
+- `subscription-events`: Main event bus for subscription lifecycle updates.
+- `subscription-dlq`: Dead-letter queue for unprocessable or failed notification events.
+
+### Event Payload Example: `SUBSCRIPTION_CREATED`
+```json
+{
+  "eventId": "e9b4d812-3a5c-4f71-912e-188b209fa22e",
+  "eventType": "SUBSCRIPTION_CREATED",
+  "aggregateId": "sub-8849102-x",
+  "timestamp": "2026-08-05T13:00:00Z",
+  "payload": {
+    "subscriptionId": "sub-8849102-x",
+    "customerId": "cust-10294",
+    "tariffId": "65b2a1f0e4b0c9123456789a",
+    "customerPhone": "+905551234567",
+    "customerEmail": "user@example.com",
+    "tariffName": "Platinum Unlimited 5G",
+    "startDate": "2026-08-05T13:00:00Z",
+    "status": "ACTIVE"
+  }
+}
+```
+
+---
+
+## 9. Observability & OTLP Telemetry Stack
+
+The ecosystem integrates the **LGTM (Loki, Grafana, Tempo, Prometheus)** stack with Spring Boot Actuator and Micrometer OTLP.
 
 ```mermaid
-graph LR
-    Start((Start)) --> Task1[Verify Customer<br/>verifyCustomerDelegate]
-    Task1 --> Task2[Verify Tariff<br/>verifyTariffDelegate]
-    Task2 --> Task3[Save Subscription<br/>saveSubscriptionDelegate]
-    Task3 --> End((End Success))
+flowchart LR
+    subgraph Microservices
+        App1[API Gateway]
+        App2[Customer Svc]
+        App3[Catalog Svc]
+        App4[Subscription Svc]
+        App5[Notification Svc]
+    end
 
-    Task1 -.->|CustomerNotFound| Err1((End Rejected))
-    Task1 -.->|ServiceUnavailable| Err2((End Service Unavailable))
-    Task2 -.->|TariffNotFound / Inactive| Err1
-    Task2 -.->|CatalogServiceUnavailable| Err2
+    subgraph Observability Collector Stack
+        Prometheus[Prometheus: 9090<br/>Metrics Engine]
+        Loki[Grafana Loki: 3100<br/>Log Aggregator]
+        Tempo[Grafana Tempo: 4317/4318<br/>Distributed Traces]
+    end
+
+    Grafana[Grafana Dashboard: 3000<br/>Unified Visualization]
+
+    App1 & App2 & App3 & App4 & App5 -->|Micrometer Prometheus| Prometheus
+    App1 & App2 & App3 & App4 & App5 -->|Loki4j Logback Appender| Loki
+    App1 & App2 & App3 & App4 & App5 -->|OTLP Trace Exporter| Tempo
+
+    Prometheus --> Grafana
+    Loki --> Grafana
+    Tempo --> Grafana
 ```
 
-#### BPMN Java Delegate Implementation Example:
-```java
-@Component("verifyCustomerDelegate")
-@RequiredArgsConstructor
-public class VerifyCustomerDelegate implements JavaDelegate {
-
-    private final CustomerClient customerClient; // OpenFeign Client
-
-    @Override
-    public void execute(DelegateExecution execution) {
-        String customerId = (String) execution.getVariable("customerId");
-        
-        try {
-            CustomerIdentityResponse customer = customerClient.getCustomerById(UUID.fromString(customerId));
-            if (customer == null) {
-                // Throws BPMN Error caught by boundary event in diagram
-                throw new BpmnError("CUSTOMER_NOT_FOUND", "Customer ID does not exist.");
-            }
-        } catch (FeignException.ServiceUnavailable e) {
-            throw new BpmnError("CUSTOMER_SERVICE_UNAVAILABLE", "Customer service timeout.");
-        }
-    }
-}
-```
+- **Trace Correlation**: Every log output automatically includes `trace_id` and `span_id` injected by Micrometer Tracing.
+- **Grafana Pre-configured Datasources**: Automatically provisioned via `grafana-datasources.yml`.
 
 ---
 
-### Pattern 4: Kafka Idempotent Consumer & DLQ Retry Policy
+## 10. Zero-Trust Security & Permission Matrix
 
-`notification-service` implements 2-phase idempotency with exponential backoff retries and Dead Letter Queue (DLQ) support.
+Security is enforced at both API Gateway and individual microservice resource levels using Keycloak Realm Roles (`ROLE_ADMIN`, `ROLE_CUSTOMER`, `ROLE_SERVICE`).
 
-```java
-@Service
-public class SubscriptionNotificationListener {
-
-    private final StringRedisTemplate redisTemplate;
-    private final ProcessedEventRepository processedEventRepository;
-
-    @RetryableTopic(
-        attempts = "5",
-        backOff = @BackOff(delay = 1000, multiplier = 2.0, maxDelay = 10000) // 1s, 2s, 4s, 8s, 10s
-    )
-    @Transactional(rollbackOn = Exception.class)
-    @KafkaListener(topics = "subscription-created-topic", groupId = "notification-service")
-    public void onSubscriptionCreated(SubscriptionCreatedEvent event) {
-        String eventId = event.eventId();
-        String redisKey = "idempotency:notification:" + eventId;
-
-        // Phase 1: Fast Redis Atomic Lock
-        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(redisKey, "PROCESSING", Duration.ofHours(24));
-        if (!Boolean.TRUE.equals(acquired)) {
-            return; // Duplicate event ignored
-        }
-
-        try {
-            // Phase 2: PostgreSQL Deduplication Table Check
-            if (processedEventRepository.existsById(eventId)) {
-                markDone(redisKey);
-                return;
-            }
-
-            // Save processing state & execute SMS send
-            processedEventRepository.saveAndFlush(new ProcessedEvent(eventId, LocalDateTime.now()));
-            sendNotification(event);
-            markDone(redisKey);
-
-        } catch (Exception e) {
-            redisTemplate.delete(redisKey); // Release lock to allow retry
-            throw e; // Triggers @RetryableTopic attempt
-        }
-    }
-}
-```
+| Endpoint | HTTP Method | `ROLE_ADMIN` | `ROLE_CUSTOMER` | `ROLE_SERVICE` | Access Rule Notes |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| `/api/v1/tariffs` | GET | ✅ | ✅ | ✅ | Publicly visible tariff catalog |
+| `/api/v1/tariffs` | POST / PUT / DELETE | ✅ | ❌ | ❌ | Restricted to Telecom Admins |
+| `/api/v1/customers/{id}` | GET / PUT | ✅ | ✅ (Own Profile) | ❌ | Self-ownership check via JWT claim |
+| `/api/v1/customers/webhook/**` | PUT / DELETE | ❌ | ❌ | ✅ | Keycloak SPI Service Account only |
+| `/api/v1/subscriptions` | POST | ✅ | ✅ (Own Account)| ❌ | Initiate plan subscription purchase |
+| `/api/v1/subscriptions/{id}` | GET / DELETE | ✅ | ✅ (Own Sub) | ❌ | View or cancel active subscription |
+| `/actuator/prometheus` | GET | ✅ | ❌ | ✅ | Monitoring scraping endpoints |
 
 ---
 
-## 5. Security & Permission Matrix (RBAC)
+## 11. Deployment, Build & Verification Guide
 
-Security is managed via Keycloak. JWT Tokens carry `realm_access.roles` claims.
+### 11.1 Prerequisites
+- **Java Development Kit (JDK)**: Version 25
+- **Build Tool**: Apache Maven 3.8+
+- **Containerization**: Docker Desktop & Docker Compose 2.x
 
-```java
-@Configuration
-@EnableMethodSecurity
-public class SecurityConfig {
-
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(AbstractHttpConfigurer::disable)
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
-                .anyRequest().authenticated()
-            )
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
-        return http.build();
-    }
-}
-```
-
-### RBAC Permission Matrix
-
-| Endpoint | HTTP Method | `ROLE_ADMIN` | `ROLE_CUSTOMER` | `ROLE_SERVICE` |
-| :--- | :--- | :--- | :--- | :--- |
-| `/api/v1/tariffs/**` | `GET` | ✅ Allowed | ✅ Allowed | ❌ Forbidden |
-| `/api/v1/tariffs/**` | `POST / PUT / DELETE` | ✅ Allowed | ❌ Forbidden (`403`) | ❌ Forbidden |
-| `/api/v1/customers/{id}` | `GET / PUT` | ✅ Allowed | ✅ *(Own UUID only via `isOwner`)* | ❌ Forbidden |
-| `/api/v1/customers/webhook`| `POST / DELETE` | ❌ Forbidden | ❌ Forbidden | ✅ *(Keycloak SPI Service Account)* |
-| `/api/v1/subscriptions` | `POST` | ✅ Allowed | ✅ *(Own Customer ID)* | ❌ Forbidden |
-
----
-
-## 6. Developer Workflow: Adding a New Feature
-
-Follow this step-by-step procedure to add a new field (e.g. `nationalId`) to `Customer Service`:
-
-### Step 1: Create Database Migration Script
-Create `customer-service/src/main/resources/db/migration/V2__add_national_id.sql`:
-```sql
-ALTER TABLE customers ADD COLUMN national_id VARCHAR(11);
-```
-
-### Step 2: Update JPA Entity
-In `Customer.java`:
-```java
-@Column(name = "national_id", length = 11)
-private String nationalId;
-```
-
-### Step 3: Update DTO Records
-In `CustomerRequest.java` and `CustomerResponse.java`:
-```java
-public record CustomerResponse(
-    UUID id,
-    String firstName,
-    String lastName,
-    String email,
-    String nationalId, // Added field
-    String keycloakUserId
-) {}
-```
-
-### Step 4: Re-build and Test
+### 11.2 Project Compilation
+To clean and package all microservices and the Keycloak custom listener JAR into single executable artifacts:
 ```bash
-# Clean and compile multi-module project
 mvn clean package -DskipTests
-
-# Start containers
-docker compose up -d
-
-# Check migration logs via Actuator
-curl http://localhost:8082/actuator/flyway
 ```
 
+### 11.3 Environment Setup (`.env`)
+Ensure `.env` file exists in project root with required variables:
+```env
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=admin
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=telecom_db
+MONGO_ROOT_USER=root
+MONGO_ROOT_PASSWORD=example
+TEXTBEE_API_KEY=your_textbee_api_key
+```
+
+### 11.4 Launch Entire Infrastructure & Microservices
+```bash
+docker compose up -d --build
+```
+
+### 11.5 Verifying Running Services
+Check health status of containers:
+```bash
+docker compose ps
+```
+
+| Service | Host Port | Accessible URL / Health Check |
+| :--- | :---: | :--- |
+| **API Gateway** | `8080` | `http://localhost:8080/actuator/health` |
+| **Swagger UI Aggregator** | `8080` | `http://localhost:8080/swagger-ui.html` |
+| **Keycloak IAM Admin** | `8081` | `http://localhost:8081` |
+| **Subscription Service** | `8082` | `http://localhost:8082/api/v1/history/bpmn-xml` |
+| **Catalog Service** | `8083` | `http://localhost:8083/actuator/health` |
+| **Customer Service** | `8084` | `http://localhost:8084/actuator/health` |
+| **Notification Service** | `8085` | `http://localhost:8085/actuator/health` |
+| **Grafana Dashboards** | `3000` | `http://localhost:3000` |
+| **Prometheus UI** | `9090` | `http://localhost:9090` |
+
 ---
 
-## 7. Infrastructure Ports & Observability Matrix
+## 12. Conclusion & Internship Deliverables
 
-| Tool / Service | Port | Dashboard / Access URL | Purpose |
-| :--- | :--- | :--- | :--- |
-| **API Gateway** | `8080` | `http://localhost:8080/swagger-ui.html` | Unified API & Swagger Documentation |
-| **Keycloak IAM** | `8081` | `http://localhost:8081` *(admin/admin)* | IAM Administration & Realm Management |
-| **PostgreSQL** | `5432` | `localhost:5432` *(telecom_user)* | Customer & Subscription Database |
-| **MongoDB** | `27017`| `localhost:27017` *(admin)* | Product Catalog Document Store |
-| **Redis** | `6379` | `localhost:6379` | Cache & Distributed Lock Store |
-| **Kafka Broker** | `9092` | `localhost:9092` | Event Streaming Backbone |
-| **Prometheus** | `9090` | `http://localhost:9090` | System Metrics Collector |
-| **Grafana** | `3000` | `http://localhost:3000` | Unified Metrics/Logs/Traces Dashboard |
-| **Tempo** | `3200` | Integrated into Grafana | OpenTelemetry Distributed Request Tracing |
-| **Loki** | `3100` | Integrated into Grafana | Centralized Log Aggregation |
+The **Telecom CRM Enterprise Microservice Ecosystem** developed by **Mahmut Yükselci** for **Pia Bilişim A.Ş.** demonstrates complete mastery over advanced distributed systems software engineering.
+
+### Key Milestones Delivered:
+1. ✅ **Enterprise Architecture**: Designed and deployed a containerized 5-microservice architecture with zero single points of failure.
+2. ✅ **Data Integrity**: Solved dual-write issues with Transactional Outbox and guaranteed exactly-once processing with Redis + PostgreSQL event deduplication.
+3. ✅ **IAM Integration**: Built a native Java SPI for Keycloak, automating user identity lifecycle events.
+4. ✅ **BPMN Orchestration**: Successfully integrated Flowable BPMN engine for state-machine driven subscription processing.
+5. ✅ **Production Observability**: Configured full OTLP distributed tracing across HTTP and Kafka boundaries with Grafana/Loki/Tempo/Prometheus integration.
 
 ---
-
-## 8. Summary & Maintenance Contacts
-
-This document represents the full architectural specification for the Telecom CRM platform. For updates or contributions, follow the git flow workflow and ensure all Flyway migrations and unit tests (`mvn test`) pass prior to submitting Pull Requests.
+*Documentation compiled for Pia Bilişim A.Ş. Internship Evaluation.*

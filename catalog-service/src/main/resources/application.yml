@@ -1,5 +1,16 @@
+server:
+  port: 8083
+
 spring:
   application:
     name: catalog-service
-  config:
-    import: "optional:configserver:http://localhost:8888"
+  profiles:
+    include: "shared"
+  data:
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://admin:admin_password@mongodb:27017/catalog_db?authSource=admin
+      database: catalog_db
+    redis:
+
+      host: ${SPRING_DATA_REDIS_HOST:${REDIS_HOST:localhost}}
+      port: ${SPRING_DATA_REDIS_PORT:${REDIS_PORT:6379}}

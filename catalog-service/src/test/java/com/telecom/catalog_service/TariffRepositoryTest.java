@@ -2,21 +2,20 @@ package com.telecom.catalog_service;
 
 import com.telecom.catalog_service.config.CacheConfig;
 import com.telecom.catalog_service.model.Tariff;
-import com.telecom.catalog_service.repository.TariffRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-
 import org.springframework.boot.data.mongodb.test.autoconfigure.DataMongoTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-
 import org.springframework.context.annotation.Import;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mongodb.MongoDBContainer;
 
 import java.math.BigDecimal;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,7 +29,7 @@ class TariffRepositoryTest {
     static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
     @Autowired
-    private TariffRepository tariffRepository;
+    private MongoTemplate mongoTemplate;
 
     @Test
     @DisplayName("1. CRUD: Should save tariff document to MongoDB and retrieve it by ID")
@@ -48,29 +47,33 @@ class TariffRepositoryTest {
                 .build();
 
         // When
-        Tariff saved = tariffRepository.save(tariff);
-        Optional<Tariff> found = tariffRepository.findById(saved.getId());
+        Tariff saved = mongoTemplate.save(tariff);
+        Tariff found = mongoTemplate.findById(saved.getId(), Tariff.class);
 
         // Then
-        assertThat(found).isPresent();
-        assertThat(found.get().getName()).isEqualTo("Ultra 100GB");
-        assertThat(found.get().getPrice()).isEqualByComparingTo("499.99");
-        assertThat(found.get().isActive()).isTrue();
+        assertThat(found).isNotNull();
+        assertThat(found.getName()).isEqualTo("Ultra 100GB");
+        assertThat(found.getPrice()).isEqualByComparingTo("499.99");
+        assertThat(found.isActive()).isTrue();
     }
 
     @Test
     @DisplayName("2. Delete: Should delete tariff document from MongoDB completely")
     void deleteById_shouldRemoveDocument() {
         // Given
-        Tariff saved = tariffRepository.save(
+        Tariff saved = mongoTemplate.save(
                 Tariff.builder().name("Temp Tariff").price(BigDecimal.TEN).build()
         );
-        assertThat(tariffRepository.existsById(saved.getId())).isTrue();
+
+        Tariff foundBeforeDelete = mongoTemplate.findById(saved.getId(), Tariff.class);
+        assertThat(foundBeforeDelete).isNotNull();
 
         // When
-        tariffRepository.deleteById(saved.getId());
+        Query query = new Query(Criteria.where("id").is(saved.getId()));
+        mongoTemplate.remove(query, Tariff.class);
 
         // Then
-        assertThat(tariffRepository.existsById(saved.getId())).isFalse();
+        Tariff foundAfterDelete = mongoTemplate.findById(saved.getId(), Tariff.class);
+        assertThat(foundAfterDelete).isNull();
     }
 }

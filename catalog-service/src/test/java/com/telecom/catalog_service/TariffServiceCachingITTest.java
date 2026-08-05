@@ -3,7 +3,6 @@ package com.telecom.catalog_service;
 import com.telecom.catalog_service.dto.TariffRequest;
 import com.telecom.catalog_service.dto.TariffResponse;
 import com.telecom.catalog_service.model.Tariff;
-import com.telecom.catalog_service.repository.TariffRepository;
 import com.telecom.catalog_service.service.TariffService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -32,7 +32,6 @@ class TariffServiceCachingITTest {
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
-
     @Container
     @ServiceConnection
     static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
@@ -41,22 +40,22 @@ class TariffServiceCachingITTest {
     private TariffService tariffService;
 
     @Autowired
-    private TariffRepository tariffRepository;
+    private MongoTemplate mongoTemplate;
 
     @Autowired
     private CacheManager cacheManager;
 
     @BeforeEach
     void setUp() {
-        tariffRepository.deleteAll();
+        mongoTemplate.dropCollection(Tariff.class);
         Objects.requireNonNull(cacheManager.getCache("tariffs")).clear();
     }
 
     @Test
     @DisplayName("E2E-1: @Cacheable should cache tariff retrieval and avoid duplicate database hits")
     void shouldCacheTariffRetrieval() {
-        // 1. GIVEN: Create a tariff in MongoDB directly
-        Tariff tariff = tariffRepository.save(Tariff.builder()
+        // 1. GIVEN: Create a tariff in MongoDB directly via MongoTemplate
+        Tariff tariff = mongoTemplate.save(Tariff.builder()
                 .name("Cache Test Tariff")
                 .price(new BigDecimal("150.00"))
                 .isActive(true)
@@ -69,7 +68,7 @@ class TariffServiceCachingITTest {
 
         // Modify DB record directly bypassing the service to prove cache is used on second call
         tariff.setName("Modified In DB Only");
-        tariffRepository.save(tariff);
+        mongoTemplate.save(tariff);
 
         // Second invocation (Should retrieve from "tariffs" cache, not DB)
         TariffResponse secondCall = tariffService.getTariffById(tariffId);
@@ -83,7 +82,7 @@ class TariffServiceCachingITTest {
     @DisplayName("E2E-2: @CacheEvict should clear cache when tariff is updated")
     void shouldEvictCacheOnTariffUpdate() {
         // 1. GIVEN: Create a tariff and warm up the cache
-        Tariff tariff = tariffRepository.save(Tariff.builder()
+        Tariff tariff = mongoTemplate.save(Tariff.builder()
                 .name("Old Tariff Name")
                 .price(new BigDecimal("100.00"))
                 .isActive(false)

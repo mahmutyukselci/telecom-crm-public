@@ -1,6 +1,86 @@
+server:
+  port: 8080
+
 spring:
   application:
     name: api-gateway
-  config:
-    import: "optional:configserver:http://localhost:8888"
 
+  config:
+    import: "classpath:application-shared.yml"
+
+  main:
+    web-application-type: reactive
+    allow-bean-definition-overriding: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  cloud:
+    gateway:
+      httpserver:
+        wiretap: true
+
+      discovery:
+        locator:
+          enabled: false
+          lower-case-service-id: true
+
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 10
+            redis-rate-limiter.burstCapacity: 20
+            redis-rate-limiter.requestedTokens: 1
+            key-resolver: "#{@userIpKeyResolver}"
+
+      routes:
+        # ------------------------------------
+        #  API
+        # ------------------------------------
+        - id: catalog-service
+          uri: ${CATALOG_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/tariffs/**
+
+        - id: subscription-service
+          uri: ${SUBSCRIPTION_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/subscriptions/**
+
+        - id: customer-service
+          uri: ${CUSTOMER_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/v1/customers/**
+
+        - id: notification-service
+          uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/api/v1/notifications/**
+
+
+springdoc:
+  swagger-ui:
+    oauth:
+      client-id: swagger-ui
+      use-pkce-with-authorization-code-grant: true
+    urls:
+      - name: Customer Service
+        url: /v3/api-docs/customer-service
+      - name: Subscription Service
+        url: /v3/api-docs/subscription-service
+      - name: Catalog Service
+        url: /v3/api-docs/catalog-service
+      - name: Notification Service
+        url: /v3/api-docs/notification-service
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.cloud.gateway: TRACE
+    org.springframework.cloud.gateway.handler.RoutePredicateHandlerMapping: TRACE
+    org.springframework.cloud.gateway.filter.NettyRoutingFilter: TRACE
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-}] "
+  include-application-name: false

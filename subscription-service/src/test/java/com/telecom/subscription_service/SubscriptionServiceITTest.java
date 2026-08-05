@@ -25,10 +25,7 @@ import java.time.LocalDateTime;
 @SpringBootTest
 @ActiveProfiles("test")
 @TestPropertySource(properties = {
-        "spring.cloud.config.enabled=false",
         "spring.config.import=",
-        "eureka.client.enabled=false",
-        "spring.cloud.discovery.enabled=false",
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.default_schema=subscription_schema",

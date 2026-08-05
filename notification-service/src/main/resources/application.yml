@@ -1,5 +1,71 @@
+server:
+  port: 8085
+
 spring:
   application:
     name: notification-service
+
   config:
-    import: "optional:configserver:http://localhost:8888"
+    import: "classpath:application-shared.yml"
+
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/telecom_db}
+    username: ${POSTGRES_USER:telecom_user}
+    password: ${POSTGRES_PASSWORD:telecom_password}
+    driver-class-name: org.postgresql.Driver
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages:  "com.telecom.*"
+        spring.json.value.default.type: com.telecom.notification_service.event.SubscriptionCreatedEvent
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        default_schema: notification_schema
+        hbm2ddl.create_namespaces: true
+
+  flyway:
+    enabled: true
+    schemas: notification_schema
+    default-schema: notification_schema
+    create-schemas: true
+    baseline-on-migrate: true
+    baseline-version: 0
+
+notification:
+  mock:
+    fail: false
+    latency-ms: 250
+
+  textbee:
+    api-url: "https://api.textbee.dev/api/v1"
+    api-key: ${TEXTBEE_API_KEY}
+    device-id: "your-device-id"
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      notificationProvider:
+        sliding-window-size: 4
+        minimum-number-of-calls: 2
+        failure-rate-threshold: 50
+        permitted-number-of-calls-in-half-open-state: 1
+        wait-duration-in-open-state: 20s
+        record-exceptions:
+          - com.telecom.notification_service.exception.NotificationDispatchException
