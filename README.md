@@ -57,18 +57,16 @@ The goal of this project was to build a modern, high-throughput, cloud-native Te
 
 ## 2. High-Level Architecture & Engineering Patterns
 
-```
-+---------------------------------------------------------------------------------------------------+
-|                                     TELECOM CRM ECOSYSTEM                                         |
-+---------------------------------------------------------------------------------------------------+
-|                                                                                                   |
-|  [ Client / Postman / Web ] ---> [ API Gateway: 8080 ] ---> [ Microservices ] ---> [ Databases ]  |
-|                                         |                         |                        |      |
-|                                    (Keycloak JWKS)           (Kafka Broker)           (PG/Mongo)  |
-|                                         |                         |                        |      |
-|                                  [ Keycloak: 8081 ]      [ Notification Svc ]      [ Redis ]     |
-|                                                                                                   |
-+---------------------------------------------------------------------------------------------------+
+```mermaid
+graph LR
+    Client["Client / Web / Mobile App"] -->|HTTPS + Bearer JWT| Gateway["API Gateway (Port: 8080)"]
+    Gateway -->|JWKS Validation| Keycloak["Keycloak IAM (Port: 8081)"]
+    Gateway -->|Route Requests| Services["Spring Boot Microservices"]
+    Services -->|Sync RestClient| Services
+    Services -->|Polyglot Storage| DBs[("PostgreSQL 16 / MongoDB 8.2 / Redis 7.x")]
+    Services -->|Transactional Outbox| Kafka["Apache Kafka Broker"]
+    Kafka -->|Async Consumer| Notif["Notification Service (Port: 8085)"]
+    Notif -->|Delivery| SMS["TextBee SMS API"]
 ```
 
 ### 12-Factor App & Docker Internal DNS Service Discovery
@@ -115,65 +113,95 @@ Subscription creation is orchestrated using Flowable BPMN engine. The process st
 
 ## 3. System Architecture Diagram
 
-```text
-=====================================================================================================================
-                                   TELECOM CRM - DOCKER DDNS ARCHITECTURE
-=====================================================================================================================
+```mermaid
+graph TB
+    subgraph Clients["Clients & Gateways"]
+        Client["Web / Mobile Clients"]
+    end
 
-                                       [ Web / Mobile Clients ]
-                                                  |
-                                                  | (REST / HTTPS + Bearer JWT)
-                                                  v
-+-------------------------------------------------------------------------------------------------------------------+
-|                                            API GATEWAY (Port: 8080)                                               |
-|  - Spring Cloud Gateway (WebFlux)   - JWT Validation (Keycloak JWKS)   - Redis Rate Limiter (userIpKeyResolver)   |
-+-------------------------------------------------------------------------------------------------------------------+
-           |                                     |                                         |
-           | (Route: /api/v1/tariffs)            | (Route: /api/v1/customers)              | (Route: /api/v1/subs)
-           v                                     v                                         v
-+-------------------------+            +-------------------------+               +-------------------------+
-|     CATALOG SERVICE     |            |    CUSTOMER SERVICE     |               |  SUBSCRIPTION SERVICE   |
-| - MongoTemplate         | (Sync)     | - Spring Data JPA       |    (Sync)     | - Spring Data JPA       |
-| - @Cacheable (Redis)    |<---------->| - Flyway Migrations     |<------------->| - Flowable BPMN Engine  |
-| - RestClient            |            | - RestClient            |               | - RestClient            |
-+------------+------------+            +------------+------------+               +------------+------------+
-           |                                      |                                         |
-           v                                      | (Transactional Outbox)                  | (Transactional Outbox)
-   [ MongoDB (8.2) ]                              v                                         v
-   [ Redis Cache   ]                     [ PostgreSQL (16) ]                       [ PostgreSQL (16) ]
-                                         [ Outbox Table    ]                       [ Outbox Table    ]
-                                                  |                                         |
-                                                  | (Outbox Poller / Scheduler)             | (Outbox Poller)
-==================================================|=========================================|======================
-                                                  v                                         v
-                                  +-------------------------------------------------------------+
-+------------------+ (Custom SPI) |                        APACHE KAFKA                         |
-|   KEYCLOAK IAM   |------------->|   (Message Broker for Async Event-Driven Communication)     |
-| - OAuth2 / OIDC  | (User Events)+-------------------------------+-----------------------------+
-| - Custom SPI     |                                              |
-+------------------+                                              | (Consumes: UserCreated, SubActivated, etc.)
-                                                                  v
-                                                  +-------------------------+
-                                                  |  NOTIFICATION SERVICE   |
-                                                  | - Kafka Consumer        |
-                                                  | - Resilience4j (Retry)  |
-                                                  | - PostgreSQL (Logs)     |
-                                                  +------------+------------+
-                                                               | (Sync REST via RestClient)
-                                                               v
-                                                    [ TEXTBEE SMS API / EMAIL ]
+    subgraph IAM["Identity & Access Management"]
+        Keycloak["Keycloak IAM (Port: 8081)<br/>- OAuth2 / OIDC<br/>- Custom Event Listener SPI"]
+    end
 
-=====================================================================================================================
-                                      OBSERVABILITY & TRACING (OTLP STACK)
-=====================================================================================================================
-All services asynchronously send metrics and traces via (Micrometer + OTLP Bridge) to the following stack:
+    subgraph GatewayLayer["API Gateway"]
+        Gateway["API Gateway (Port: 8080)<br/>- Spring Cloud Gateway (WebFlux)<br/>- Keycloak JWKS JWT Validation<br/>- Redis Rate Limiter (userIpKeyResolver)"]
+    end
 
-[ Spring Boot Logs ] ---------(Log Streams)-------> [ LOKI ] -----------\
-                                                                         +---> [ GRAFANA (Port: 3000) ]
-[ Micrometer OTLP ] ----------(TraceID/SpanID)----> [ TEMPO ] ---------/       (Datasources auto-configured,
-                                                                         \      Unified Dashboard)
-[ Micrometer OTLP ] ----------(CPU/Mem Metrics)---> [ PROMETHEUS ] ------+
-=====================================================================================================================
+    subgraph Microservices["Microservice Domain Layer"]
+        CatalogSvc["Catalog Service (Port: 8083)<br/>- MongoTemplate & RestClient<br/>- @Cacheable (Redis)"]
+        CustomerSvc["Customer Service (Port: 8084)<br/>- Spring Data JPA & Flyway<br/>- Transactional Outbox Pattern<br/>- RestClient"]
+        SubSvc["Subscription Service (Port: 8082)<br/>- Spring Data JPA & RestClient<br/>- Flowable BPMN Engine<br/>- Transactional Outbox Pattern"]
+        NotifSvc["Notification Service (Port: 8085)<br/>- Kafka Consumer & Resilience4j<br/>- PostgreSQL Audit Logs"]
+    end
+
+    subgraph Datastores["Polyglot Persistence"]
+        MongoDb[("MongoDB 8.2<br/>(Port: 27017)<br/>Tariffs & Catalog")]
+        RedisDb[("Redis Cache<br/>(Port: 6379)<br/>Rate Limiting & Locks")]
+        PostgresDb[("PostgreSQL 16<br/>(Port: 5432)<br/>Customer / Sub / Outbox")]
+    end
+
+    subgraph Messaging["Event-Driven Messaging"]
+        Kafka["Apache Kafka (Port: 9092)<br/>Topics: subscription-events, subscription-dlq"]
+    end
+
+    subgraph External["External Services"]
+        TextBee["TextBee SMS API / Email Provider"]
+    end
+
+    %% Flow Connections
+    Client -->|REST / HTTPS + Bearer JWT| Gateway
+    Gateway -->|JWKS Validation| Keycloak
+    Gateway -->|/api/v1/tariffs| CatalogSvc
+    Gateway -->|/api/v1/customers| CustomerSvc
+    Gateway -->|/api/v1/subs| SubSvc
+
+    Keycloak -->|Custom SPI Webhook Sync| CustomerSvc
+    SubSvc -->|Sync RestClient| CustomerSvc
+    SubSvc -->|Sync RestClient| CatalogSvc
+
+    CatalogSvc --> MongoDb
+    CatalogSvc --> RedisDb
+    CustomerSvc --> PostgresDb
+    SubSvc --> PostgresDb
+
+    CustomerSvc -.->|Outbox Poller / Scheduler| Kafka
+    SubSvc -.->|Outbox Poller / Scheduler| Kafka
+
+    Kafka -->|Consumes Events| NotifSvc
+    NotifSvc --> PostgresDb
+    NotifSvc --> RedisDb
+    NotifSvc -->|Sync REST| TextBee
+```
+
+### Observability & Tracing (OTLP Stack)
+
+All microservices asynchronously send logs, metrics, and traces via Micrometer + OTLP Bridge to the LGTM stack:
+
+```mermaid
+graph LR
+    subgraph AppLayer["Microservices Logging & Tracing"]
+        Logs["Spring Boot Log Output"]
+        Metrics["Micrometer Metrics"]
+        Traces["Micrometer OTLP Traces"]
+    end
+
+    subgraph OTLPStack["Observability Collector Stack"]
+        Loki["Grafana Loki (Port: 3100)<br/>Log Aggregation Engine"]
+        Prometheus["Prometheus (Port: 9090)<br/>Metrics Collector"]
+        Tempo["Grafana Tempo (Port: 4317/4318)<br/>Distributed Trace Engine"]
+    end
+
+    subgraph UI["Visualization"]
+        Grafana["Grafana Unified Dashboard (Port: 3000)<br/>Auto-configured Datasources"]
+    end
+
+    Logs -->|Log Streams| Loki
+    Metrics -->|CPU / Mem Metrics| Prometheus
+    Traces -->|TraceID / SpanID| Tempo
+
+    Loki --> Grafana
+    Prometheus --> Grafana
+    Tempo --> Grafana
 ```
 
 ---
