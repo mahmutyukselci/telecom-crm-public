@@ -1,0 +1,9 @@
+# IDE & System Files
+.idea/
+*.iml
+.DS_Store
+
+# Build & Logs
+**/target/
+**/*.jar
+*.log

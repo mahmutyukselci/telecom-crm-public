@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Process Visual History</title>
+    <script src="https://unpkg.com/bpmn-js@11.4.1/dist/bpmn-navigated-viewer.development.js"></script>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #canvas {
+            width: 100vw;
+            height: 100vh;
+            background-color: #f8f9fa;
+        }
+
+        #control-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 350px;
+        }
+
+        input, select {
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        button {
+            padding: 10px 15px;
+            background: #0d6efd;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #0b5ed7;
+        }
+
+        #drawBtn {
+            background: #198754;
+        }
+
+        #drawBtn:hover {
+            background: #157347;
+        }
+
+        /* THE MAGIC: Force override BPMN-JS SVG styles */
+        .highlight-node .djs-visual > :nth-child(1) {
+            fill: #d1e7dd !important;      /* Light green background */
+            stroke: #0f5132 !important;    /* Dark green border */
+            stroke-width: 4px !important;  /* Thick border */
+        }
+
+        .highlight-node .djs-visual > :nth-child(1) {
+            fill: #d1e7dd !important; stroke: #0f5132 !important; stroke-width: 4px !important;
+        }
+
+        .error-node .djs-visual > :nth-child(1) {
+            fill: #f8d7da !important; stroke: #842029 !important; stroke-width: 4px !important;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="control-panel">
+    <h4 style="margin: 0; color: #333;">Flowable History Viewer</h4>
+
+    <input type="text"
+           id="customerIdInput"
+           value="67f44710-c7b1-4eb0-a914-8742cb87bc3d"
+           placeholder="Enter Customer ID">
+
+    <button onclick="loadInstances()">1. Load Previous Attempts</button>
+
+    <select id="instanceSelect" style="display:none;"></select>
+
+    <button id="drawBtn"
+            onclick="drawHistory()"
+            style="display:none;">
+        2. Draw Selected Process
+    </button>
+</div>
+
+<!-- Canvas -->
+<div id="canvas"></div>
+
+<script>
+
+    const viewer = new BpmnJS({ container: '#canvas' });
+
+    // Stage 1: Fetch all process instances for the customer
+    async function loadInstances() {
+        const customerId = document.getElementById('customerIdInput').value;
+        const select = document.getElementById('instanceSelect');
+        const drawBtn = document.getElementById('drawBtn');
+
+        select.innerHTML = ''; // Clear previous list
+
+        try {
+            const response = await fetch(
+                `http://localhost:8082/api/v1/history/customer/${customerId}/instances`
+            );
+            const instances = await response.json();
+
+            if (instances.length === 0) {
+                alert("No process history found for this customer.");
+                select.style.display = 'none';
+                drawBtn.style.display = 'none';
+                return;
+            }
+
+            // Populate dropdown
+            instances.forEach((inst, index) => {
+                const option = document.createElement('option');
+                option.value = inst.instanceId;
+
+                const date = new Date(inst.startTime).toLocaleString('en-US');
+
+                option.text = `Process ${instances.length - index} | ${date} | Status: ${inst.status}`;
+                select.appendChild(option);
+            });
+
+            select.style.display = 'block';
+            drawBtn.style.display = 'block';
+
+        } catch (err) {
+            console.error(err);
+            alert("Failed to fetch records. Is the service running?");
+        }
+    }
+
+    // Stage 2: Draw selected process history
+        async function drawHistory() {
+            const instanceSelect = document.getElementById('instanceSelect');
+            const instanceId = instanceSelect.value;
+
+            // Determine the process status (Completed or Failed) from the dropdown text
+            const isFailed = instanceSelect.options[instanceSelect.selectedIndex].text.includes('Failed');
+
+            try {
+                const bpmnResponse = await fetch('http://localhost:8082/api/v1/history/bpmn-xml');
+                const bpmnXml = await bpmnResponse.text();
+                await viewer.importXML(bpmnXml);
+
+                const apiResponse = await fetch(`http://localhost:8082/api/v1/history/instance/${instanceId}/activities`);
+                const executedNodes = await apiResponse.json();
+
+                const canvas = viewer.get('canvas');
+
+                executedNodes.forEach((node, index) => {
+
+
+                    const actualNodeId = node.activityId;
+
+                    try {
+                        if (isFailed && index === executedNodes.length - 1) {
+                            canvas.addMarker(actualNodeId, 'error-node');
+                        } else {
+                            canvas.addMarker(actualNodeId, 'highlight-node');
+                        }
+                    } catch (e) {}
+                });
+
+                canvas.zoom('fit-viewport');
+
+                // (eventBus section inside the drawHistory function)
+                const eventBus = viewer.get('eventBus');
+                eventBus.on('element.click', async function(e) {
+
+                    // executedNodes is no longer a list of strings, but a list of objects.
+                    // Find the clicked ID in the list:
+                    const clickedNodeData = executedNodes.find(n => n.activityId === e.element.id);
+
+                    if (clickedNodeData) {
+                        const varResponse = await fetch(`http://localhost:8082/api/v1/history/instance/${instanceId}/variables`);
+                        const variables = await varResponse.json();
+
+                        const msg = `📍 Step: ${clickedNodeData.activityName || clickedNodeData.activityId}\n` +
+                                    `⏱️ Duration: ${clickedNodeData.durationMs ? clickedNodeData.durationMs + ' ms' : 'In progress'}\n\n` +
+                                    `📦 Process Variables:\n${JSON.stringify(variables, null, 2)}`;
+
+                        alert(msg);
+                    }
+                });
+
+            } catch (err) {
+                console.error("Drawing error: ", err);
+            }
+        }
+</script>
+
+</body>
+</html>

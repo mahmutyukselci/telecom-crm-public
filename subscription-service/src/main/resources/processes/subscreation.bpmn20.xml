@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+        xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+        xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+        xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+        xmlns:flowable="http://flowable.org/bpmn"
+        id="Definitions_1"
+        targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <!-- ERROR DEFINITIONS -->
+  <bpmn:error id="error_CUSTOMER_NOT_FOUND" errorCode="CUSTOMER_NOT_FOUND" name="CustomerNotFound"/>
+  <bpmn:error id="error_CUSTOMER_SERVICE_UNAVAILABLE" errorCode="CUSTOMER_SERVICE_UNAVAILABLE" name="CustomerServiceUnavailable"/>
+  <bpmn:error id="error_TARIFF_NOT_FOUND" errorCode="TARIFF_NOT_FOUND" name="TariffNotFound"/>
+  <bpmn:error id="error_TARIFF_INACTIVE" errorCode="TARIFF_INACTIVE" name="TariffInactive"/>
+  <bpmn:error id="error_CATALOG_SERVICE_UNAVAILABLE" errorCode="CATALOG_SERVICE_UNAVAILABLE" name="CatalogServiceUnavailable"/>
+
+  <bpmn:process id="subscriptionCreationProcess" name="subscreation" isExecutable="true">
+
+    <!-- START -->
+    <bpmn:startEvent id="startEvent">
+      <bpmn:outgoing>flow1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- VERIFY CUSTOMER -->
+    <bpmn:serviceTask id="verifyCustomerTask"
+                      name="Verify Customer"
+                      flowable:delegateExpression="${verifyCustomerDelegate}">
+      <bpmn:incoming>flow1</bpmn:incoming>
+      <bpmn:outgoing>flow2</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- VERIFY TARIFF -->
+    <bpmn:serviceTask id="verifyTariffTask"
+                      name="Verify Tariff"
+                      flowable:delegateExpression="${verifyTariffDelegate}">
+      <bpmn:incoming>flow2</bpmn:incoming>
+      <bpmn:outgoing>flow3</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- SAVE SUBSCRIPTION -->
+    <bpmn:serviceTask id="saveSubscriptionTask"
+                      name="Save Subscription"
+                      flowable:delegateExpression="${saveSubscriptionDelegate}">
+      <bpmn:incoming>flow3</bpmn:incoming>
+      <bpmn:outgoing>flow4</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- HAPPY PATH END -->
+    <bpmn:endEvent id="endEvent">
+      <bpmn:incoming>flow4</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- BOUNDARY EVENTS: VERIFY CUSTOMER -->
+    <bpmn:boundaryEvent id="customerNotFoundBoundary" attachedToRef="verifyCustomerTask" cancelActivity="true">
+      <bpmn:outgoing>flowCustomerNotFoundToRejected</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="error_CUSTOMER_NOT_FOUND"/>
+    </bpmn:boundaryEvent>
+
+    <bpmn:boundaryEvent id="customerServiceUnavailableBoundary" attachedToRef="verifyCustomerTask" cancelActivity="true">
+      <bpmn:outgoing>flowCustomerSvcUnavailableToEnd</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="error_CUSTOMER_SERVICE_UNAVAILABLE"/>
+    </bpmn:boundaryEvent>
+
+    <!-- BOUNDARY EVENTS: VERIFY TARIFF -->
+    <bpmn:boundaryEvent id="tariffNotFoundBoundary" attachedToRef="verifyTariffTask" cancelActivity="true">
+      <bpmn:outgoing>flowTariffNotFoundToRejected</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="error_TARIFF_NOT_FOUND"/>
+    </bpmn:boundaryEvent>
+
+    <bpmn:boundaryEvent id="tariffInactiveBoundary" attachedToRef="verifyTariffTask" cancelActivity="true">
+      <bpmn:outgoing>flowTariffInactiveToRejected</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="error_TARIFF_INACTIVE"/>
+    </bpmn:boundaryEvent>
+
+    <bpmn:boundaryEvent id="catalogServiceUnavailableBoundary" attachedToRef="verifyTariffTask" cancelActivity="true">
+      <bpmn:outgoing>flowCatalogSvcUnavailableToEnd</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="error_CATALOG_SERVICE_UNAVAILABLE"/>
+    </bpmn:boundaryEvent>
+
+    <!-- ERROR END EVENTS -->
+    <bpmn:endEvent id="rejectedEndEvent" name="Rejected">
+      <bpmn:incoming>flowCustomerNotFoundToRejected</bpmn:incoming>
+      <bpmn:incoming>flowTariffNotFoundToRejected</bpmn:incoming>
+      <bpmn:incoming>flowTariffInactiveToRejected</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="serviceUnavailableEndEvent" name="Service Unavailable">
+      <bpmn:incoming>flowCustomerSvcUnavailableToEnd</bpmn:incoming>
+      <bpmn:incoming>flowCatalogSvcUnavailableToEnd</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- FLOWS: HAPPY PATH -->
+    <bpmn:sequenceFlow id="flow1" sourceRef="startEvent" targetRef="verifyCustomerTask"/>
+    <bpmn:sequenceFlow id="flow2" sourceRef="verifyCustomerTask" targetRef="verifyTariffTask"/>
+    <bpmn:sequenceFlow id="flow3" sourceRef="verifyTariffTask" targetRef="saveSubscriptionTask"/>
+    <bpmn:sequenceFlow id="flow4" sourceRef="saveSubscriptionTask" targetRef="endEvent"/>
+
+    <!-- FLOWS: ERROR PATHS -->
+    <bpmn:sequenceFlow id="flowCustomerNotFoundToRejected" sourceRef="customerNotFoundBoundary" targetRef="rejectedEndEvent"/>
+    <bpmn:sequenceFlow id="flowCustomerSvcUnavailableToEnd" sourceRef="customerServiceUnavailableBoundary" targetRef="serviceUnavailableEndEvent"/>
+    <bpmn:sequenceFlow id="flowTariffNotFoundToRejected" sourceRef="tariffNotFoundBoundary" targetRef="rejectedEndEvent"/>
+    <bpmn:sequenceFlow id="flowTariffInactiveToRejected" sourceRef="tariffInactiveBoundary" targetRef="rejectedEndEvent"/>
+    <bpmn:sequenceFlow id="flowCatalogSvcUnavailableToEnd" sourceRef="catalogServiceUnavailableBoundary" targetRef="serviceUnavailableEndEvent"/>
+
+  </bpmn:process>
+
+  <!-- DIAGRAM (UI) -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="subscriptionCreationProcess">
+
+      <bpmndi:BPMNShape id="startEvent_di" bpmnElement="startEvent">
+        <dc:Bounds x="150" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="verifyCustomerTask_di" bpmnElement="verifyCustomerTask">
+        <dc:Bounds x="250" y="80" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="verifyTariffTask_di" bpmnElement="verifyTariffTask">
+        <dc:Bounds x="400" y="80" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="saveSubscriptionTask_di" bpmnElement="saveSubscriptionTask">
+        <dc:Bounds x="550" y="80" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="endEvent_di" bpmnElement="endEvent">
+        <dc:Bounds x="700" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Boundary events on verifyCustomerTask -->
+      <bpmndi:BPMNShape id="customerNotFoundBoundary_di" bpmnElement="customerNotFoundBoundary">
+        <dc:Bounds x="272" y="142" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="customerServiceUnavailableBoundary_di" bpmnElement="customerServiceUnavailableBoundary">
+        <dc:Bounds x="312" y="142" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Boundary events on verifyTariffTask -->
+      <bpmndi:BPMNShape id="tariffNotFoundBoundary_di" bpmnElement="tariffNotFoundBoundary">
+        <dc:Bounds x="405" y="142" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="tariffInactiveBoundary_di" bpmnElement="tariffInactiveBoundary">
+        <dc:Bounds x="445" y="142" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="catalogServiceUnavailableBoundary_di" bpmnElement="catalogServiceUnavailableBoundary">
+        <dc:Bounds x="485" y="142" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Error end events -->
+      <bpmndi:BPMNShape id="rejectedEndEvent_di" bpmnElement="rejectedEndEvent">
+        <dc:Bounds x="430" y="280" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="serviceUnavailableEndEvent_di" bpmnElement="serviceUnavailableEndEvent">
+        <dc:Bounds x="430" y="380" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <!-- Happy path edges -->
+      <bpmndi:BPMNEdge id="flow1_di" bpmnElement="flow1">
+        <di:waypoint x="186" y="118"/>
+        <di:waypoint x="250" y="118"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="flow2_di" bpmnElement="flow2">
+        <di:waypoint x="350" y="118"/>
+        <di:waypoint x="400" y="118"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="flow3_di" bpmnElement="flow3">
+        <di:waypoint x="500" y="118"/>
+        <di:waypoint x="550" y="118"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="flow4_di" bpmnElement="flow4">
+        <di:waypoint x="650" y="118"/>
+        <di:waypoint x="700" y="118"/>
+      </bpmndi:BPMNEdge>
+
+      <!-- Error path edges -->
+      <bpmndi:BPMNEdge id="flowCustomerNotFoundToRejected_di" bpmnElement="flowCustomerNotFoundToRejected">
+        <di:waypoint x="290" y="178"/>
+        <di:waypoint x="290" y="298"/>
+        <di:waypoint x="430" y="298"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="flowCustomerSvcUnavailableToEnd_di" bpmnElement="flowCustomerSvcUnavailableToEnd">
+        <di:waypoint x="330" y="178"/>
+        <di:waypoint x="330" y="398"/>
+        <di:waypoint x="430" y="398"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="flowTariffNotFoundToRejected_di" bpmnElement="flowTariffNotFoundToRejected">
+        <di:waypoint x="423" y="178"/>
+        <di:waypoint x="423" y="280"/>
+        <di:waypoint x="440" y="280"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="flowTariffInactiveToRejected_di" bpmnElement="flowTariffInactiveToRejected">
+        <di:waypoint x="463" y="178"/>
+        <di:waypoint x="463" y="298"/>
+        <di:waypoint x="466" y="298"/>
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="flowCatalogSvcUnavailableToEnd_di" bpmnElement="flowCatalogSvcUnavailableToEnd">
+        <di:waypoint x="503" y="178"/>
+        <di:waypoint x="503" y="398"/>
+        <di:waypoint x="466" y="398"/>
+      </bpmndi:BPMNEdge>
+
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

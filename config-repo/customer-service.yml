@@ -1,0 +1,27 @@
+# config-repo/customer-service.yml
+server:
+  port: 8084
+
+spring:
+  application:
+    name: customer-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081/realms/telecom-realm
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        default_schema: customer_schema # JPA will use this schema
+        hbm2ddl.create_namespaces: true
+  flyway:
+    enabled: true
+    schemas: customer_schema
+    default-schema: customer_schema # Flyway runs in this schema
+    create-schemas: true            # Flyway creates the schema if it does not exist
+    baseline-on-migrate: true
+    baseline-version: 0

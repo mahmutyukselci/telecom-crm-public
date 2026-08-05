@@ -1,0 +1,135 @@
+services:
+  # -----------------------------------------------------------
+  # 1. Identity and Access Management
+  # -----------------------------------------------------------
+  keycloak:
+    image: keycloak/keycloak:latest
+    container_name: telecom-keycloak
+    environment:
+      # Initial admin credentials for the Keycloak management console
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_HOSTNAME=http://localhost:8081
+      - SYNC_CLIENT_ID=internal-sync-client
+      - SYNC_CLIENT_SECRET=HkuBvz0TbfvnQYh7fTmR5GGbCyqWGTvdeQIYYcxneXbklFQLvyiU4wFzz0YIVwIANJ6VR58Unv611VjQYOed8F
+    ports:
+      - "8081:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./keycloak:/opt/keycloak/data/import
+      - ./keycloak-custom-listener/target/keycloak-custom-listener.jar:/opt/keycloak/providers/keycloak-custom-listener.jar
+    command:
+      - start-dev
+      - --import-realm
+
+  # -----------------------------------------------------------
+  # 2. Relational Database (For Subscription & BPMN Engine)
+  # -----------------------------------------------------------
+  postgres:
+    image: postgres:latest
+    container_name: telecom-postgres
+    environment:
+      # Default credentials and database creation on startup
+      - POSTGRES_USER=telecom_user
+      - POSTGRES_PASSWORD=telecom_password
+      - POSTGRES_DB=telecom_db
+    ports:
+      - "5432:5432"
+
+  # -----------------------------------------------------------
+  # 3. NoSQL Database (For Flexible Product Catalog & Tariffs)
+  # -----------------------------------------------------------
+  mongodb:
+    image: mongo:latest
+    container_name: telecom-mongo
+    environment:
+      # Root credentials for MongoDB authentication
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=admin_password
+    ports:
+      - "27017:27017"
+
+  # -----------------------------------------------------------
+  # 4. In-Memory Data Store / Cache (For Fast Catalog Lookups)
+  # -----------------------------------------------------------
+  redis:
+    image: redis:latest
+    container_name: telecom-redis
+    ports:
+      - "6379:6379"
+
+  # -----------------------------------------------------------
+  # 5. Message Broker (For Asynchronous Event Notifications)
+  # -----------------------------------------------------------
+  kafka:
+    image: apache/kafka:latest
+    container_name: telecom-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # Modern KRaft mode configuration (No Zookeeper required)
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+  # -----------------------------------------------------------
+  # 6. OBSERVABILITY STACK
+  # -----------------------------------------------------------
+
+  # 6.1 PROMETHEUS (Metrics collector)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: telecom-prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml # We will create this file shortly
+
+  # 6.2 TEMPO (Distributed Request Tracing)
+  tempo:
+    image: grafana/tempo:latest
+    container_name: telecom-tempo
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml # We will create this file shortly
+    ports:
+      - "3200:3200"   # Tempo UI/API
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+
+  # 6.3 GRAFANA (Visualization dashboard)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: telecom-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    depends_on:
+      - prometheus
+      - tempo
+      
+  loki:
+    image: grafana/loki:latest
+    container_name: telecom-loki
+    ports:
+      - "3100:3100"
+    command: 
+      -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./loki.yaml:/etc/loki/loki.yaml
+
+volumes:
+  keycloak_data:
