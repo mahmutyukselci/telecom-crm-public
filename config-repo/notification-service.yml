@@ -39,7 +39,7 @@ notification:
   textbee:
     api-url: "https://api.textbee.dev/api/v1"
     api-key: "your-api-key"
-    device-id: "6a6b496bcd8a35b23c8ac0ab"
+    device-id: "your-device-id"
 
 resilience4j:
   circuitbreaker:
