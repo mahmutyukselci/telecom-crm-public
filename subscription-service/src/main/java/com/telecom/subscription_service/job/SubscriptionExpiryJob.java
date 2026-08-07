@@ -30,7 +30,7 @@ public class SubscriptionExpiryJob {
 
     // PRO TIP: In production, use "0 0 0 * * ?" (runs every midnight).
     // For development/testing convenience, it currently runs every minute.
-    @Scheduled(cron = "0 * * * * ?")
+    @Scheduled(cron = "0 0 18-22 * * ?")
     @SchedulerLock(name = "subscriptionExpiryJob", lockAtLeastFor = "PT30S", lockAtMostFor = "PT5M")
     public void run() {
         log.info("⏰ Scanning for subscriptions expiring in {} days...", daysAhead);
@@ -50,8 +50,10 @@ public class SubscriptionExpiryJob {
         }
 
         for (Subscription sub : expiringSubs) {
+            String deterministicEventId = "EXP-" + sub.getId() + "-" + startOfTargetDay.toLocalDate();
+
             SubscriptionExpiringEvent event = new SubscriptionExpiringEvent(
-                    UUID.randomUUID().toString(),
+                    deterministicEventId,
                     sub.getId(),
                     sub.getCustomerId(),
                     sub.getTariffId()
