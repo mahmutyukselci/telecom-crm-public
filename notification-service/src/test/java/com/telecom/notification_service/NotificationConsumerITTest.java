@@ -12,6 +12,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -40,6 +41,8 @@ import static org.mockito.Mockito.*;
 })
 @ActiveProfiles("test")
 class NotificationConsumerITTest {
+        @MockitoBean
+        private JavaMailSender javaMailSender;
 
         @MockitoBean
         private JwtDecoder jwtDecoder;
