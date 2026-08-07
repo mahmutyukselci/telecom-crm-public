@@ -15,6 +15,11 @@
 	<description>Notification Service</description>
 
 	<dependencies>
+		<!-- Spring Boot Mail Starter -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
 		<!-- Internal Common Utils  -->
 		<dependency>
 			<groupId>com.telecom</groupId>

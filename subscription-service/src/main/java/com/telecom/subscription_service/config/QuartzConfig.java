@@ -23,7 +23,7 @@ public class QuartzConfig {
         return TriggerBuilder.newTrigger()
                 .forJob(expiryJobDetail())
                 .withIdentity("subscriptionExpiryTrigger")
-                .withSchedule(CronScheduleBuilder.cronSchedule("0 * * * * ?"))
+                .withSchedule(CronScheduleBuilder.cronSchedule("0 0 18-22 * * ?"))
                 .build();
     }
 }
