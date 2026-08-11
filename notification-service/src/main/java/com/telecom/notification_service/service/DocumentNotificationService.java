@@ -117,25 +117,6 @@ public class DocumentNotificationService {
         }
     }
 
-    private void sendSingleFile(String toEmail, MultipartFile file) {
-        try {
-            File tempFile = File.createTempFile("doc-", "-" + file.getOriginalFilename());
-            file.transferTo(tempFile);
-
-            emailProvider.sendWithAttachment(
-                    toEmail,
-                    "Your Requested Document",
-                    "Please find the document attached.",
-                    tempFile
-            );
-
-            tempFile.delete();
-
-        } catch (IOException e) {
-            log.error("Failed to process single file: {}", e.getMessage());
-        }
-    }
-
     // Server-side compression using Java's built-in ZipOutputStream
     private File createZipArchive(MultipartFile[] files) throws IOException {
         File zipFile = File.createTempFile("documents-archive-", ".zip");
