@@ -38,12 +38,14 @@ public class DocumentNotificationService {
 
         log.info("Total size of incoming documents: {} bytes", totalSize);
 
-        if (totalSize <= MAX_ATTACHMENT_SIZE && files.length == 1) {
-            // Scenario 1: Only 1 file and it is under 3 MB. Send it directly.
-            sendSingleFile(toEmail, files[0]);
+        if (totalSize <= MAX_ATTACHMENT_SIZE) {
+            // Scenario 1: Total size is under 3 MB. Send all files directly as attachments.
+            log.info("Total size is under the 3 MB threshold. Sending {} files directly.", files.length);
+
+            sendMultipleFilesAsAttachments(toEmail, files);
 
         } else {
-            // Scenario 2: Multiple files or total size > 3 MB. Try compressing them into a ZIP archive.
+            // Scenario 2: Total size > 3 MB. Try compressing the files into a ZIP archive.
             try {
                 File zippedFile = createZipArchive(files);
                 log.info("Zipped file size: {} bytes", zippedFile.length());
@@ -51,11 +53,11 @@ public class DocumentNotificationService {
                 if (zippedFile.length() <= MAX_ATTACHMENT_SIZE) {
                     log.info("Zip file is under the 3 MB threshold. Sending as an attachment.");
 
-                    emailProvider.sendWithAttachment(
+                    emailProvider.sendWithAttachments(
                             toEmail,
                             "Your Requested Documents",
                             "Please find the compressed documents attached.",
-                            zippedFile
+                            List.of(zippedFile) // Send the ZIP file as a list
                     );
 
                 } else {
@@ -71,12 +73,46 @@ public class DocumentNotificationService {
                     );
                 }
 
-                // Clean up the temporary ZIP file
                 zippedFile.delete();
 
             } catch (IOException e) {
                 log.error("Error during document processing: {}", e.getMessage());
                 throw new RuntimeException("Document processing failed", e);
+            }
+        }
+    }
+
+    // NEW METHOD: Converts all incoming MultipartFiles into temporary files and attaches them to the email
+    private void sendMultipleFilesAsAttachments(String toEmail, MultipartFile[] files) {
+        List<File> tempFiles = new ArrayList<>();
+
+        try {
+            for (MultipartFile file : files) {
+                File tempFile = File.createTempFile(
+                        "doc-",
+                        "-" + file.getOriginalFilename()
+                );
+
+                file.transferTo(tempFile);
+                tempFiles.add(tempFile);
+            }
+
+            emailProvider.sendWithAttachments(
+                    toEmail,
+                    "Your Requested Documents",
+                    "Please find your requested documents attached.",
+                    tempFiles
+            );
+
+        } catch (IOException e) {
+            log.error("Failed to process multiple files: {}", e.getMessage());
+
+        } finally {
+            // Prevent memory/resource leaks: Clean up all temporary files after processing
+            for (File tempFile : tempFiles) {
+                if (tempFile.exists()) {
+                    tempFile.delete();
+                }
             }
         }
     }

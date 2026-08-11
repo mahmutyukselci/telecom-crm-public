@@ -78,6 +78,31 @@ public class EmailNotificationProvider implements NotificationProvider {
             throw new RuntimeException("Mail sending failed", e);
         }
     }
+    // NEW METHOD: Support for multiple file attachments
+    public void sendWithAttachments(String to, String subject, String text, List<File> attachments) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true);
+
+            helper.setFrom(senderEmail);
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(text);
+
+            // Add all provided files as email attachments
+            for (File file : attachments) {
+                FileSystemResource fileResource = new FileSystemResource(file);
+                helper.addAttachment(fileResource.getFilename(), fileResource);
+            }
+
+            mailSender.send(message);
+            log.info("Email with {} attachment(s) sent successfully to {}", attachments.size(), to);
+
+        } catch (Exception e) {
+            log.error("Failed to send email with attachments to {}: {}", to, e.getMessage());
+            throw new RuntimeException("Mail sending failed", e);
+        }
+    }
 
     // --- NEW: Send Email with Cloud Links (HTML) ---
     public void sendWithCloudLinks(String to, String subject, List<String> downloadLinks) {
