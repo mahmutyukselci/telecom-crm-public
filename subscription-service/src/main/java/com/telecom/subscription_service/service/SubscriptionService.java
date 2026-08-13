@@ -179,6 +179,36 @@ public class SubscriptionService {
                 subscriptionAddonRepository.save(addon);
         }
 
+        @Transactional
+        public void processAsyncPaymentResult(String subscriptionId, boolean paymentSuccess, String promoCode) {
+                Subscription subscription = subscriptionRepository.findById(subscriptionId)
+                                .orElseThrow(() -> new RuntimeException("Subscription not found with id: " + subscriptionId));
+
+                if (subscription.getStatus() == SubscriptionStatus.ACTIVE || subscription.getStatus() == SubscriptionStatus.FAILED) {
+                        log.info("Idempotency guard: Subscription {} already processed in state {}", subscriptionId, subscription.getStatus());
+                        return;
+                }
+
+                if (paymentSuccess) {
+                        subscription.setStatus(SubscriptionStatus.ACTIVE);
+                        subscriptionRepository.save(subscription);
+                        log.info("Saga Pattern: Payment succeeded for subscription {}. Status updated to ACTIVE", subscriptionId);
+                } else {
+                        subscription.setStatus(SubscriptionStatus.FAILED);
+                        subscriptionRepository.save(subscription);
+                        log.warn("Saga Pattern: Payment failed for subscription {}. Triggering compensating transaction to release promo code: {}", subscriptionId, promoCode);
+
+                        // Trigger Saga Compensating Event (Outbox Event) to release promo code in catalog-service
+                        outboxService.saveEvent(
+                                        AGGREGATE_TYPE_SUBSCRIPTION,
+                                        subscription.getId(),
+                                        "SAGA_COMPENSATE_PROMO_RELEASE",
+                                        "saga-compensation-topic",
+                                        Map.of("subscriptionId", subscriptionId, "promoCode", promoCode)
+                        );
+                }
+        }
+
         public List<SubscriptionAddonResponse> getAddonsBySubscriptionId(String subscriptionId) {
                 subscriptionRepository.findById(subscriptionId)
                                 .orElseThrow(() -> new RuntimeException("Subscription not found"));
