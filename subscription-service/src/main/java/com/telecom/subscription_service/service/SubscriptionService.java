@@ -138,8 +138,17 @@ public class SubscriptionService {
                 log.info("Subscription cancelled and outbox event saved for ID: {}", id);
         }
 
-        @Transactional
         public void addAddon(String subscriptionId, String tariffId) {
+                // 1. Perform external HTTP call OUTSIDE of database transaction
+                // to prevent HikariCP connection pool holding and lock contention under high concurrency
+                catalogServiceClient.getTariffById(tariffId);
+
+                // 2. Perform database transaction in isolated transactional scope
+                executeAddAddonTransaction(subscriptionId, tariffId);
+        }
+
+        @Transactional
+        public void executeAddAddonTransaction(String subscriptionId, String tariffId) {
                 Subscription subscription = subscriptionRepository.findById(subscriptionId)
                                 .orElseThrow(() -> new RuntimeException("Subscription not found"));
 
@@ -151,8 +160,6 @@ public class SubscriptionService {
                                 subscriptionId, tariffId, AddonStatus.ACTIVE)) {
                         throw new RuntimeException("Addon already exists");
                 }
-
-                catalogServiceClient.getTariffById(tariffId);
 
                 SubscriptionAddon addon = SubscriptionAddon.builder()
                                 .subscriptionId(subscriptionId)

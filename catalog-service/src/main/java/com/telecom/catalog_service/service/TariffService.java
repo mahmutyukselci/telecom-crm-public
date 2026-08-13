@@ -30,14 +30,14 @@ public class TariffService {
 
         return tariffMapper.toResponse(savedTariff);
     }
-    @Cacheable(value = "tariffs", key = "'all'")
+    @Cacheable(value = "tariffs", key = "'all'", sync = true)
     public List<TariffResponse> getAllTariffs() {
         return tariffRepository.findAll()
                 .stream()
                 .map(tariffMapper::toResponse)
                 .toList();
     }
-    @Cacheable(value = "tariffs", key = "#id")
+    @Cacheable(value = "tariffs", key = "#id", sync = true)
     public TariffResponse getTariffById(String id) {
         Tariff tariff = tariffRepository.findById(id)
                 .orElseThrow(() -> new TariffNotFoundException(id));
