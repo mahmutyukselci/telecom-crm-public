@@ -16,8 +16,10 @@ import java.util.Map;
 
 /**
  * Dynamic Multi-DataSource configuration for Master-Replica Read/Write splitting.
+ * Enabled when spring.datasource.dynamic-routing.enabled=true.
  */
 @Configuration
+@ConditionalOnProperty(name = "spring.datasource.dynamic-routing.enabled", havingValue = "true")
 public class DynamicDataSourceConfig {
 
     @Bean
