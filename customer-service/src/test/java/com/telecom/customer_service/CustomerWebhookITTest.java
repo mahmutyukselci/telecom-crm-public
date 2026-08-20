@@ -27,6 +27,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @WithMockUser(roles = "SERVICE")
 @TestPropertySource(properties = {
+        "spring.cloud.config.enabled=false",
+        "spring.config.import=",
+        "eureka.client.enabled=false",
+        "spring.cloud.discovery.enabled=false",
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.default_schema=customer_schema",

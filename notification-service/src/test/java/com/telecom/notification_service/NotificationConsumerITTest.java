@@ -33,6 +33,9 @@ import static org.mockito.Mockito.*;
 @Testcontainers
 @SpringBootTest(properties = {
                 "spring.cloud.config.enabled=false",
+                "spring.config.import=",
+                "eureka.client.enabled=false",
+                "spring.cloud.discovery.enabled=false",
                 "spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer",
                 "spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JsonDeserializer",
                 "spring.kafka.consumer.properties.spring.json.trusted.packages=com.telecom.notification_service.event",

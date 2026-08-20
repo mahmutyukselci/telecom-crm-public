@@ -24,9 +24,17 @@ import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.springframework.test.context.TestPropertySource;
+
 @Testcontainers
 @SpringBootTest
 @ActiveProfiles("test")
+@TestPropertySource(properties = {
+        "spring.cloud.config.enabled=false",
+        "spring.config.import=",
+        "eureka.client.enabled=false",
+        "spring.cloud.discovery.enabled=false"
+})
 class TariffServiceCachingITTest {
 
     @MockitoBean

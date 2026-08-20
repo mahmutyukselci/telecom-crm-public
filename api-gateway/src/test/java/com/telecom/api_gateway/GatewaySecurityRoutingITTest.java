@@ -19,9 +19,17 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import org.springframework.test.context.TestPropertySource;
+
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureWebTestClient
 @ActiveProfiles("test")
+@TestPropertySource(properties = {
+        "spring.cloud.config.enabled=false",
+        "spring.config.import=",
+        "eureka.client.enabled=false",
+        "spring.cloud.discovery.enabled=false"
+})
 class GatewaySecurityRoutingITTest {
 
         @MockitoBean

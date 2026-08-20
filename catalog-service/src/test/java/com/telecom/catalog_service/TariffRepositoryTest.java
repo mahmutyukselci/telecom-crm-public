@@ -20,8 +20,18 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
+
 @Testcontainers
 @DataMongoTest
+@ActiveProfiles("test")
+@TestPropertySource(properties = {
+        "spring.cloud.config.enabled=false",
+        "spring.config.import=",
+        "eureka.client.enabled=false",
+        "spring.cloud.discovery.enabled=false"
+})
 @Import(CacheConfig.class)
 class TariffRepositoryTest {
 
