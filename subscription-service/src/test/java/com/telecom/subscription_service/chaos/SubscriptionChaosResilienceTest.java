@@ -80,6 +80,7 @@ class SubscriptionChaosResilienceTest {
     private SubscriptionEventSourcingService eventSourcingService;
 
     @Test
+    @org.springframework.transaction.annotation.Transactional
     @DisplayName("Chaos Test 1: Simulated Kafka Network Blackhole - Outbox Pattern Guarantees Zero Message Loss")
     void testBrokerBlackholeAndTransactionalOutboxResilience() {
         // GIVEN: Kafka broker is simulated as unreachable / blackholed (throws transport timeout exception)
