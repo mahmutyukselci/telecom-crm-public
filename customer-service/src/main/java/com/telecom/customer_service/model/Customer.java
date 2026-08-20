@@ -23,14 +23,17 @@ public class Customer {
 
     @NotBlank(message = "First name must not be blank")
     @Size(min = 2, max = 50, message = "First name must be between 2 and 50 characters")
+    @Column(name = "first_name", nullable = false, length = 50)
     private String firstName;
 
     @NotBlank(message = "Last name must not be blank")
     @Size(min = 2, max = 50, message = "Last name must be between 2 and 50 characters")
+    @Column(name = "last_name", nullable = false, length = 50)
     private String lastName;
 
     @NotBlank(message = "Email must not be blank")
     @Email(message = "Email must be a valid format")
+    @Column(name = "email", nullable = false, unique = true, length = 150)
     private String email;
 
     @Column(name = "keycloak_user_id", unique = true)
@@ -41,5 +44,6 @@ public class Customer {
             regexp = "^[0-9]{10,15}$",
             message = "Phone number must be between 10 and 15 digits"
     )
+    @Column(name = "phone", nullable = false, length = 20)
     private String phone;
 }
