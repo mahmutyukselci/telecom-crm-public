@@ -1,6 +1,7 @@
 package com.telecom.notification_service;
 
 import com.telecom.notification_service.event.SubscriptionCreatedEvent;
+import com.telecom.notification_service.provider.EmailNotificationProvider;
 import com.telecom.notification_service.provider.NotificationProvider;
 import com.telecom.notification_service.repository.ProcessedEventRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,8 +68,11 @@ class NotificationConsumerITTest {
         @Autowired
         private ProcessedEventRepository processedEventRepository;
 
-        @MockitoBean
+        @MockitoBean(name = "mockNotificationProvider")
         private NotificationProvider notificationProvider;
+
+        @MockitoBean
+        private EmailNotificationProvider emailNotificationProvider;
 
         @MockitoBean
         private StringRedisTemplate redisTemplate;
