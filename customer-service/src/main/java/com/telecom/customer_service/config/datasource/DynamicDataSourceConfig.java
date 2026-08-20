@@ -3,7 +3,6 @@ package com.telecom.customer_service.config.datasource;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,32 +21,16 @@ import java.util.Map;
 @ConditionalOnProperty(name = "spring.datasource.dynamic-routing.enabled", havingValue = "true")
 public class DynamicDataSourceConfig {
 
-    @Bean
-    @ConfigurationProperties(prefix = "spring.datasource.master")
-    public DataSourceProperties masterDataSourceProperties() {
-        return new DataSourceProperties();
-    }
-
     @Bean(name = "masterDataSource")
+    @ConfigurationProperties(prefix = "spring.datasource.master")
     public DataSource masterDataSource() {
-        return masterDataSourceProperties()
-                .initializeDataSourceBuilder()
-                .type(HikariDataSource.class)
-                .build();
-    }
-
-    @Bean
-    @ConfigurationProperties(prefix = "spring.datasource.replica")
-    public DataSourceProperties replicaDataSourceProperties() {
-        return new DataSourceProperties();
+        return new HikariDataSource();
     }
 
     @Bean(name = "replicaDataSource")
+    @ConfigurationProperties(prefix = "spring.datasource.replica")
     public DataSource replicaDataSource() {
-        return replicaDataSourceProperties()
-                .initializeDataSourceBuilder()
-                .type(HikariDataSource.class)
-                .build();
+        return new HikariDataSource();
     }
 
     @Bean(name = "routingDataSource")
