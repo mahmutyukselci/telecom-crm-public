@@ -17,7 +17,7 @@ class PaymentServiceTest {
     @Test
     @DisplayName("processPayment: Should return SUCCESS status and valid transaction ID for prompt payment")
     void processPayment_shouldReturnSuccess() {
-        PaymentRequest request = new PaymentRequest("sub-12345", new BigDecimal("199.99"), false);
+        PaymentRequest request = new PaymentRequest("sub-12345", "cust-999", "PROMO10", new BigDecimal("199.99"), false);
 
         PaymentResponse response = paymentService.processPayment(request);
 
