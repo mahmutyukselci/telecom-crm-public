@@ -6,6 +6,7 @@ import com.telecom.subscription_service.model.SubscriptionStatus;
 import com.telecom.subscription_service.outbox.OutboxEvent;
 import com.telecom.subscription_service.outbox.OutboxEventRepository;
 import com.telecom.subscription_service.outbox.OutboxService;
+import com.telecom.subscription_service.outbox.OutboxStatus;
 import com.telecom.subscription_service.repository.SubscriptionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.DisplayName;
@@ -111,7 +112,7 @@ class SubscriptionChaosResilienceTest {
         // Verify outbox buffered the event in PostgreSQL table for asynchronous self-healing relay
         List<OutboxEvent> pendingEvents = outboxEventRepository.findAll();
         assertThat(pendingEvents).isNotEmpty();
-        assertThat(pendingEvents.get(0).isProcessed()).isFalse();
+        assertThat(pendingEvents.get(0).getStatus()).isEqualTo(OutboxStatus.PENDING);
         log.info("✅ [CHAOS VERIFIED] Message broker blackhole handled gracefully: Zero data loss via Outbox buffer!");
     }
 
