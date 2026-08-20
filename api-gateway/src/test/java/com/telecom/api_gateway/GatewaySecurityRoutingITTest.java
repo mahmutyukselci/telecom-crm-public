@@ -28,7 +28,13 @@ import org.springframework.test.context.TestPropertySource;
         "spring.cloud.config.enabled=false",
         "spring.config.import=",
         "eureka.client.enabled=false",
-        "spring.cloud.discovery.enabled=false"
+        "spring.cloud.discovery.enabled=false",
+        "spring.cloud.gateway.routes[0].id=tariff-test-route",
+        "spring.cloud.gateway.routes[0].uri=forward:/actuator/health",
+        "spring.cloud.gateway.routes[0].predicates[0]=Path=/api/v1/tariffs/**",
+        "spring.cloud.gateway.routes[1].id=customer-test-route",
+        "spring.cloud.gateway.routes[1].uri=forward:/actuator/health",
+        "spring.cloud.gateway.routes[1].predicates[0]=Path=/api/v1/customers/**"
 })
 class GatewaySecurityRoutingITTest {
 
