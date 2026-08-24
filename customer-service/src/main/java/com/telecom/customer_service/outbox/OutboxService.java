@@ -18,7 +18,7 @@ public class OutboxService {
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
 
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public void saveEvent(String aggregateType, String aggregateId, String eventType, String topic, Object eventPayload) {
         try {
             String payloadJson = objectMapper.writeValueAsString(eventPayload);

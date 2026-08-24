@@ -33,7 +33,9 @@ import java.time.LocalDateTime;
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.default_schema=subscription_schema",
         "spring.jpa.properties.hibernate.hbm2ddl.create_namespaces=true",
-        "outbox.relay.interval-ms=99999999"
+        "outbox.relay.interval-ms=99999999",
+        "flowable.async-executor-activate=false",
+        "spring.kafka.listener.auto-startup=false"
 })
 class SubscriptionServiceITTest {
 

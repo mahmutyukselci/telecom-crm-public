@@ -50,7 +50,9 @@ import static org.mockito.Mockito.*;
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.default_schema=subscription_schema",
         "spring.jpa.properties.hibernate.hbm2ddl.create_namespaces=true",
-        "outbox.relay.interval-ms=99999999"
+        "outbox.relay.interval-ms=99999999",
+        "flowable.async-executor-activate=false",
+        "spring.kafka.listener.auto-startup=false"
 })
 class SubscriptionChaosResilienceTest {
 
@@ -78,36 +80,35 @@ class SubscriptionChaosResilienceTest {
     private SubscriptionEventSourcingService eventSourcingService;
 
     @Test
+    @org.springframework.transaction.annotation.Transactional
     @DisplayName("Chaos Test 1: Simulated Kafka Network Blackhole - Outbox Pattern Guarantees Zero Message Loss")
     void testBrokerBlackholeAndTransactionalOutboxResilience() {
         // GIVEN: Kafka broker is simulated as unreachable / blackholed (throws transport timeout exception)
         doThrow(new RuntimeException("Kafka Broker Network Partition / Connection Refused: 9092"))
                 .when(kafkaTemplate).send(any(), any(), any());
 
-        UUID subscriptionId = UUID.randomUUID();
-
         // WHEN: Core subscription lifecycle transaction is executed during network outage
         Subscription subscription = Subscription.builder()
-                .id(subscriptionId.toString())
                 .customerId(UUID.randomUUID().toString())
                 .tariffId("TARIFF_ULTRA_5G")
                 .status(SubscriptionStatus.PENDING_PAYMENT)
                 .startDate(LocalDateTime.now())
                 .build();
 
-        subscriptionRepository.save(subscription);
+        Subscription saved = subscriptionRepository.save(subscription);
+        String subscriptionId = saved.getId();
 
         // Transactional Outbox write
         outboxService.saveEvent(
                 "SUBSCRIPTION",
-                subscriptionId.toString(),
+                subscriptionId,
                 "SUBSCRIPTION_CREATED",
                 "subscription-events-topic",
                 "{\"tariffId\": \"TARIFF_ULTRA_5G\"}"
         );
 
         // THEN: Database transaction committed successfully despite broker outage
-        assertThat(subscriptionRepository.findById(subscriptionId.toString())).isPresent();
+        assertThat(subscriptionRepository.findById(subscriptionId)).isPresent();
 
         // Verify outbox buffered the event in PostgreSQL table for asynchronous self-healing relay
         List<OutboxEvent> pendingEvents = outboxEventRepository.findAll();

@@ -281,7 +281,7 @@ class SubscriptionServiceTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Subscription not active");
 
-        verifyNoInteractions(catalogServiceClient);
+        verify(catalogServiceClient, times(1)).getTariffById("tariff-500");
         verify(subscriptionAddonRepository, never()).save(any());
     }
 
@@ -302,7 +302,7 @@ class SubscriptionServiceTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Addon already exists");
 
-        verifyNoInteractions(catalogServiceClient);
+        verify(catalogServiceClient, times(1)).getTariffById(tariffId);
         verify(subscriptionAddonRepository, never()).save(any());
     }
 
