@@ -1,18 +1,10 @@
-server:
-  port: 8086
-
 spring:
   application:
     name: payment-service
-  datasource:
-    url: jdbc:postgresql://localhost:5432/telecom_db
-    username: telecom_user
-    password: telecom_pass
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: false
+  config:
+    import: "optional:configserver:http://localhost:8888"
 
-logging:
-  level:
-    com.telecom.payment_service: INFO
+
+server:
+  port: 8086
+
