@@ -15,7 +15,6 @@
 * **Cache Stampede (Thundering Herd) Mutex Protection:** Applying atomic synchronized caching (`@Cacheable(..., sync = true)`) to prevent database pool exhaustion under extreme concurrent request bursts.
 * **HikariCP Pool & Transaction Scope Optimization:** Eliminating database connection pool starvation by isolating external synchronous RestClient HTTP calls outside of `@Transactional` boundaries.
 * **Choreography Saga Pattern & Compensating Transactions:** Guaranteeing self-healing resilience against network timeouts and eliminating ghost transactions via `PENDING_PAYMENT` state machine safeguards and outbox-driven promo code release rollbacks.
-* **RabbitMQ High-Volume Staging & Chunking Architecture:** Resolving message broker RAM saturation (850 MB -> 120 MB, **85.9% memory footprint reduction**) via database staging tables (`TEMP_JOB5_DATA`) and controlled batch chunk extraction.
 * **BPMN 2.0 Workflow Automation:** Declarative orchestration of complex subscription lifecycles using Flowable engine instead of brittle programmatic state machines.
 * **Guaranteed Event Delivery:** Eliminating the dual-write problem between relational storage and message brokers via the Transactional Outbox pattern.
 * **Zero-Trust IAM & Data Isolation:** Centralized OAuth2/OIDC token verification via Keycloak with custom SPI event listeners, RestClient JWT propagation interceptors, and fine-grained SpEL method security (`isOwner`).
@@ -63,7 +62,6 @@ graph TD
     subgraph EventStreaming ["Event-Driven Backbone & Message Broker"]
         CustSvc -->|Transactional Outbox| Kafka{Apache Kafka :9092}
         SubSvc -->|Transactional Outbox| Kafka
-        SubSvc -->|Staged Chunk Extraction| RabbitMQ{RabbitMQ Broker :5672}
         Kafka -->|Topics| NotifSvc[Notification Service :8085]
         NotifSvc -->|Idempotency Lock| Redis
         NotifSvc -->|Processed Events| PG_Notif[(PostgreSQL)]
@@ -90,7 +88,7 @@ graph TD
 | **`api-gateway`** | 8080 | N/A | **Redis** | Central entry point, reactive WebFlux routing, CORS, JWT decoding, Redis Token Bucket Rate Limiting. |
 | **`catalog-service`** | 8083 | **MongoDB** | **Redis** | Flexible tariff catalog storage, sub-millisecond read caching, Synchronized Mutex Lock (`sync=true`). |
 | **`customer-service`**| 8082 | **PostgreSQL** | N/A | Customer profiles, relational identity, transactional outbox producer, Flyway schema migrations. |
-| **`subscription-service`**| 8084 | **PostgreSQL** | **TEMP_JOB5_DATA** | BPMN 2.0 purchasing flow, Flowable engine state, Quartz expiry jobs, HikariCP pool optimization. |
+| **`subscription-service`**| 8084 | **PostgreSQL** | N/A | BPMN 2.0 purchasing flow, Flowable engine state, Quartz expiry jobs, HikariCP pool optimization. |
 | **`notification-service`**| 8085 | **PostgreSQL** | **Redis** | Kafka event consumer, SMS/Email delivery, MIME PDF invoice attachments, Redis idempotency locking. |
 | **`payment-service`** | 8086 | **PostgreSQL** | N/A | POS transaction processing, simulated bank network delay, asynchronous payment event dispatcher. |
 | **`discovery-server`** | 8761 | N/A | N/A | Service registry (Netflix Eureka). |
@@ -345,26 +343,7 @@ public class SubscriptionNotificationListener {
 
 ---
 
-### Case Study 3: RabbitMQ Memory Saturation & Staged Batch Chunking Architecture
-* **Problem:** Enqueueing 300,000 heavy batch records (1 KB each) directly into RabbitMQ caused broker queue depth to spike, bloating broker RAM to **850 MB (83% of 1 GB memory limit)** and triggering critical broker memory alarms.
-* **Solution:** Engineered a two-tier database staging and chunking architecture:
-  1. Offloaded 300,000 heavy records to a temporary database staging table (`TEMP_JOB5_DATA`).
-  2. Implemented a chunked extractor worker that streams records in controlled batches of 10,000 records/chunk into RabbitMQ.
-  3. Configured consumer prefetch throttling (`basicQos(250)`).
-
-```
-+--------------------------+-------------------+--------------------+--------------------+
-| Metric                   | Unbuffered Direct | DB Staged Chunked  | Performance Delta  |
-+--------------------------+-------------------+--------------------+--------------------+
-| Peak RabbitMQ Broker RAM | 850 MB (83%)      | 120 MB (11.7%)     | ↓ 85.9% RAM Drop   |
-| Peak Queue Depth         | 300,000 msgs      | 25,000 msgs        | ↓ 91.7% Reduction  |
-| Memory Alarm / OOM Risk  | High Alarm Risk   | Zero Risk          | Stable Production  |
-+--------------------------+-------------------+--------------------+--------------------+
-```
-
----
-
-### Case Study 4: Choreography-based Saga Pattern & Self-Healing Asynchronous Payments
+### Case Study 3: Choreography-based Saga Pattern & Self-Healing Asynchronous Payments
 * **Problem:** During peak campaign events, network latencies or HTTP 504 timeouts between payment services and third-party bank POS gateways caused synchronous payment calls to fail. `subscription-service` marked subscriptions as `FAILED`, while downstream bank POS systems completed processing 30 seconds later—resulting in ghost charges, unassigned subscriptions, and burned single-use promo codes (`FIRSAT50`).
 * **Solution:** Engineered an Event-Driven Choreography Saga Pattern with a `PENDING_PAYMENT` state machine safeguard and compensating transactions:
   1. Introduced `PENDING_PAYMENT` status in `subscription-service` to guard against duplicate client resubmissions during network delays.
@@ -395,7 +374,7 @@ public void processAsyncPaymentResult(String subscriptionId, boolean paymentSucc
 
 ---
 
-### Case Study 5: Database Scale-Out & Dynamic Read-Write Splitting (Master-Replica Routing)
+### Case Study 4: Database Scale-Out & Dynamic Read-Write Splitting (Master-Replica Routing)
 * **Problem:** In telecom CRM workloads, read operations (tariff lookups, customer profile views, invoice history) outnumber write operations by 15:1. Directing all queries to a single PostgreSQL Primary (Master) instance caused CPU saturation and elevated connection wait times.
 * **Solution:** Engineered dynamic datasource routing using Spring's `AbstractRoutingDataSource` and `LazyConnectionDataSourceProxy`:
   1. Configured dedicated Master and Replica HikariCP connection pools.
@@ -416,7 +395,7 @@ public class DynamicRoutingDataSource extends AbstractRoutingDataSource {
 
 ---
 
-### Case Study 6: Real-Time Telecom Fraud Detection & Stream Analytics (Kafka Streams CEP)
+### Case Study 5: Real-Time Telecom Fraud Detection & Stream Analytics (Kafka Streams CEP)
 * **Problem:** SIM Swapping attacks and geographic velocity anomalies (e.g. SIM activation or tariff purchases from Istanbul and London within 5 minutes) cause catastrophic financial and identity fraud when detected hours late by batch cron jobs.
 * **Solution:** Developed an in-stream Complex Event Processing (CEP) engine using sliding time windows:
   1. Ingests `SubscriptionActivityEvent` stream with geo-spatial coordinates and IP metadata.
@@ -438,7 +417,7 @@ public class DynamicRoutingDataSource extends AbstractRoutingDataSource {
 
 ---
 
-### Case Study 7: Event Sourcing, Temporal State Replay & PostgreSQL Table Partitioning
+### Case Study 6: Event Sourcing, Temporal State Replay & PostgreSQL Table Partitioning
 * **Problem:** Telecom subscription lifecycles require strict regulatory auditing (BTK/GDPR compliance). Standard CRUD relational tables only preserve current state, making point-in-time state reconstruction (e.g. verifying an active plan on a specific historical date) impossible. Furthermore, append-only audit tables rapidly bloat B-Tree indexes.
 * **Solution:** Engineered an Event Sourcing architecture paired with PostgreSQL Declarative Range Partitioning:
   1. `subscription_event_store` table partitioned monthly by range (`PARTITION BY RANGE (occurred_at)`).
@@ -461,7 +440,7 @@ CREATE TABLE subscription_schema.subscription_event_store (
 
 ---
 
-### Case Study 8: Chaos Engineering & Network Fault Injection Simulation (Testcontainers + Toxiproxy)
+### Case Study 7: Chaos Engineering & Network Fault Injection Simulation (Testcontainers + Toxiproxy)
 * **Problem:** High-availability claims for microservice resilience (Saga rollbacks, Transactional Outbox buffering, circuit breakers) were unproven under real-world network anomalies like connection timeouts, packet dropouts, and broker outages.
 * **Solution:** Created an automated Chaos Engineering test suite (`SubscriptionChaosResilienceTest`) using `Testcontainers` and network proxy fault injection:
   1. **Latency Spike Injection:** Simulated 3500ms network jitter to verify thread isolation and fallback circuit breaker activation without connection pool starvation.
@@ -558,7 +537,6 @@ curl http://localhost:8082/actuator/flyway
 | **PostgreSQL** | `5432` | `localhost:5432` *(telecom_user)* | Customer & Subscription Database |
 | **MongoDB** | `27017`| `localhost:27017` *(admin)* | Product Catalog Document Store |
 | **Redis** | `6379` | `localhost:6379` | Cache & Distributed Lock Store |
-| **RabbitMQ Broker** | `5672 / 15672` | `http://localhost:15672` | High-Volume Batch Message Queue |
 | **Kafka Broker** | `9092` | `localhost:9092` | Event Streaming Backbone |
 | **Prometheus** | `9090` | `http://localhost:9090` | System Metrics Collector |
 | **Grafana** | `3000` | `http://localhost:3000` | Unified Metrics/Logs/Traces Dashboard |
